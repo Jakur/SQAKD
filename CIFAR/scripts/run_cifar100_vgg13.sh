@@ -28,7 +28,7 @@ echo $METHOD_TYPE
 # FP
 if [ $METHOD_TYPE == "fp/" ] 
 then
-    python3 train_fp.py --gpu_id '1' \
+    python3 train_fp.py --gpu_id '0' \
                     --dataset 'cifar100' \
                     --arch 'vgg13_bn_fp' \
                     --num_workers 8 \
@@ -37,6 +37,7 @@ then
                     --weight_decay 5e-4 \
                     --lr_scheduler_m 'cosine' \
                     --epochs 720 \
+                    --seed 20240913 \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
 # ===== W2A2
@@ -61,7 +62,8 @@ then
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/last_checkpoint.pth' \
+                        --seed 20240913 \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
 
@@ -87,15 +89,77 @@ then
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/last_checkpoint.pth' \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'kd' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/last_checkpoint.pth' \
+                        --seed 20240913 \
                         --kd_gamma 0.0 \
                         --kd_alpha 1.0 \
                         --kd_beta 0.0
 
+
+elif [ $METHOD_TYPE == "vid_test" ] 
+then
+    python3 train_quant.py --gpu_id '1' \
+                        --dataset 'cifar100' \
+                        --arch 'vgg13_bn_quant' \
+                        --num_workers 8 \
+                        --batch_size 64 \
+                        --weight_decay 5e-4 \
+                        --optimizer_m 'Adam' \
+                        --optimizer_q 'Adam' \
+                        --lr_m 5e-4 \
+                        --lr_q 5e-6 \
+                        --lr_scheduler_m 'cosine' \
+                        --lr_scheduler_q 'cosine' \
+                        --epochs 200 \
+                        --weight_levels 4 \
+                        --act_levels 4 \
+                        --baseline False \
+                        --use_hessian True \
+                        --load_pretrain True \
+                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/last_checkpoint.pth' \
+                        --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
+                        --distill 'vid' \
+                        --teacher_arch 'vgg13_bn_fp' \
+                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/last_checkpoint.pth' \
+                        --seed 20240913 \
+                        --kd_gamma 0.0 \
+                        --kd_alpha 1.0 \
+                        --kd_beta 0.0
+
+elif [ $METHOD_TYPE == "crd" ] 
+then
+    python3 train_quant.py --gpu_id '0' \
+                        --dataset 'cifar100' \
+                        --arch 'vgg13_bn_quant' \
+                        --num_workers 8 \
+                        --batch_size 256 \
+                        --weight_decay 5e-4 \
+                        --optimizer_m 'Adam' \
+                        --optimizer_q 'Adam' \
+                        --lr_m 5e-4 \
+                        --lr_q 5e-6 \
+                        --lr_scheduler_m 'cosine' \
+                        --lr_scheduler_q 'cosine' \
+                        --epochs 720 \
+                        --weight_levels 4 \
+                        --act_levels 4 \
+                        --baseline False \
+                        --use_hessian True \
+                        --load_pretrain True \
+                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/last_checkpoint.pth' \
+                        --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
+                        --distill 'crd' \
+                        --teacher_arch 'vgg13_bn_fp' \
+                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/last_checkpoint.pth' \
+                        --seed 20240913 \
+                        --kd_gamma 1.0 \
+                        --kd_alpha 0.0 \
+                        --kd_beta 0.8 \
+                        --all_layers 'False'
                          
 # ===== W1A1
 # EWGS

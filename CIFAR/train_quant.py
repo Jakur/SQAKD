@@ -24,6 +24,8 @@ from dataset.cifar10 import get_cifar10_dataloaders, get_cifar10_dataloaders_sam
 
 import utils_distill
 
+print(f"Cuda: {torch.cuda.is_available()}")
+
 
 start_time = time.time()
 
@@ -94,6 +96,7 @@ parser.add_argument('--kd_gamma', type=float, default=None, help='weight for cla
 parser.add_argument('--kd_alpha', type=float, default=None, help='weight balance for KD')
 parser.add_argument('--kd_beta', type=float, default=None, help='weight balance for other losses or crd loss')
 parser.add_argument('--kd_theta', type=float, default=None, help='weight balance for crdSt losses')
+parser.add_argument('--all_layers', type=str2bool, default=False, help="Train all layers on CRD")
 
 
 # NCE distillation
@@ -132,8 +135,10 @@ logging.info(log_string+'\n')
 print('')
 
 ### GPU setting
-os.environ["CUDA_VISIBLE_DEVICES"]= args.gpu_id
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+# os.environ["CUDA_VISIBLE_DEVICES"]= args.gpu_id
+foo = torch.ones(10).cuda()
+device = torch.device(foo.device)
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ### set the seed number
 if args.seed is not None:
@@ -196,6 +201,7 @@ num_total_params = sum(p.numel() for p in model.parameters())
 print("The number of parameters : ", num_total_params)
 logging.info("The number of parameters : {}".format(num_total_params))
 
+print(f"Cuda: {torch.cuda.is_available()}")
 
 if args.load_pretrain:
     trained_model = torch.load(args.pretrain_path)
@@ -328,6 +334,8 @@ criterion = nn.CrossEntropyLoss()
 
 writer = SummaryWriter(args.log_dir)
 
+writer.add_hparams(arg_dict, {}, run_name=".")
+
 
 ### train
 total_iter = 0
@@ -362,7 +370,7 @@ for ep in range(args.epochs):
 
     ### update grad scales
     if ep % args.update_every == 0 and ep != 0 and not args.baseline and args.use_hessian:
-        print("update grade scales")
+        print("update grad scales")
     ###
     writer.add_scalar('train/model_lr', optimizer_m.param_groups[0]['lr'], ep)
 

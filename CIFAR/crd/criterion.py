@@ -21,17 +21,28 @@ class CRDLoss(nn.Module):
         opt.nce_m: the momentum for updating the memory buffer
         opt.n_data: the number of samples in the training set, therefor the memory buffer is: opt.n_data x opt.feat_dim
     """
-    def __init__(self, opt):
+    def __init__(self, opt, s_dim=None, t_dim=None):
         super(CRDLoss, self).__init__()
+        squish = True
+        if s_dim is None:
+            s_dim = opt.s_dim
+            squish = False 
+        if t_dim is None:
+            t_dim = opt.t_dim
+            squish = False
         if opt.head == "linear":
-            self.embed_s = Embed(opt.s_dim, opt.feat_dim)
-            self.embed_t = Embed(opt.t_dim, opt.feat_dim)
+            if squish:
+                self.embed_s = EmbedSquish(s_dim, opt.feat_dim)
+                self.embed_t = EmbedSquish(t_dim, opt.feat_dim)
+            else:
+                self.embed_s = Embed(s_dim, opt.feat_dim)
+                self.embed_t = Embed(t_dim, opt.feat_dim)
         elif opt.head == "mlp":
-            self.embed_s = Embed_mlp(opt.s_dim, opt.feat_dim)
-            self.embed_t = Embed_mlp(opt.t_dim, opt.feat_dim)
+            self.embed_s = Embed_mlp(s_dim, opt.feat_dim)
+            self.embed_t = Embed_mlp(t_dim, opt.feat_dim)
         elif opt.head == "pad":
-            self.embed_s = Embed_pad(opt.s_dim, opt.feat_dim)
-            self.embed_t = Embed_pad(opt.t_dim, opt.feat_dim)
+            self.embed_s = Embed_pad(s_dim, opt.feat_dim)
+            self.embed_t = Embed_pad(t_dim, opt.feat_dim)
         else:
             raise NotImplementedError(f'head not supported: {opt.head}') 
         self.contrast = ContrastMemory(opt.feat_dim, opt.n_data, opt.nce_k, opt.nce_t, opt.nce_m)
@@ -89,7 +100,22 @@ class ContrastLoss(nn.Module):
         # log_D0.view(-1, 1).shape: [65536, 1]
         loss = - (log_D1.sum(0) + log_D0.view(-1, 1).sum(0)) / bsz
         return loss
+    
 
+class EmbedSquish(nn.Module):
+    """Embedding module that reduces over width / height dimensions"""
+    def __init__(self, dim_in=1024, dim_out=128):
+        super().__init__()
+        self.linear = nn.Linear(dim_in, dim_out)
+        self.l2norm = Normalize(2)
+        self.pool = nn.AdaptiveMaxPool2d(1)
+
+    def forward(self, x):
+        x = self.pool(x)
+        x = x.view(x.shape[0], -1)
+        x = self.linear(x)
+        x = self.l2norm(x)
+        return x
 
 class Embed(nn.Module):
     """Embedding module"""

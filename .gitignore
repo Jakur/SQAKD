@@ -1,0 +1,6 @@
+*/results/*
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+data/*
+CIFAR/dataset/data/*

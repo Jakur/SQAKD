@@ -49,14 +49,14 @@ class EWGS_discretizer(torch.autograd.Function):
         g_out = g + u * diff
         
         # for recording u_mean and u_std in each layer
-        if save_dict != None:
-            save_name = ctx._save_name
-            iteration = save_dict["iteration"]
-            writer = save_dict["writer"]
-            u_mean = torch.mean(u).item()
-            u_std = torch.std(u).item()
-            writer.add_scalar(f"{save_name}u_mean", u_mean, iteration)
-            writer.add_scalar(f"{save_name}u_std", u_std, iteration)
+        # if save_dict != None:
+        #     save_name = ctx._save_name
+        #     iteration = save_dict["iteration"]
+        #     writer = save_dict["writer"]
+        #     u_mean = torch.mean(u).item()
+        #     u_std = torch.std(u).item()
+        #     writer.add_scalar(f"{save_name}u_mean", u_mean, iteration)
+        #     writer.add_scalar(f"{save_name}u_std", u_std, iteration)
 
         return g_out, None, None, None, None, None
 

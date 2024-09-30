@@ -17,7 +17,7 @@ import time
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-
+num_calls = 0
 
 # for distillation, only use when args.distill is not None
 def define_distill_module_and_loss(model_s, model_t, model_params, args, n_data, train_loader):
@@ -40,15 +40,30 @@ def define_distill_module_and_loss(model_s, model_t, model_params, args, n_data,
     elif args.distill == 'crd':
         args.s_dim = feat_s[-1].shape[1]
         args.t_dim = feat_t[-1].shape[1]
+        print("Standard s_dim, t_dim")
+        print(args.s_dim)
+        print(args.t_dim)
         args.n_data = n_data # number of training data
-        criterion_kd = CRDLoss(args)
-        module_list.append(criterion_kd.embed_s)
-        module_list.append(criterion_kd.embed_t)
+        if args.all_layers:
+            print("Working on CRD on all layers")
+            s_n = [f.shape[1] for f in feat_s[1:]]
+            t_n = [f.shape[1] for f in feat_t[1:]]
+            print(s_n)
+            print(t_n)
+            criterion_kd = nn.ModuleList(
+                [CRDLoss(args, s_dim=s, t_dim=t) for (s, t) in zip(s_n, t_n)]
+            )
+            for name, param in criterion_kd.named_parameters():
+                model_params.append(param)
+        else:
+            criterion_kd = CRDLoss(args)
+            module_list.append(criterion_kd.embed_s)
+            module_list.append(criterion_kd.embed_t)
 
-        for name, param in criterion_kd.embed_s.named_parameters():
-            model_params.append(param)
-        for name, param in criterion_kd.embed_t.named_parameters():
-            model_params.append(param)
+            for name, param in criterion_kd.embed_s.named_parameters():
+                model_params.append(param)
+            for name, param in criterion_kd.embed_t.named_parameters():
+                model_params.append(param)
 
     elif args.distill == 'crdst':
         similarity_transfer = SimilarityTransfer(args.st_method, args.arch)
@@ -152,13 +167,24 @@ def define_distill_module_and_loss(model_s, model_t, model_params, args, n_data,
 
 def get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast_idx):
 
+    global num_calls
+    num_calls += 1
+
     if args.distill == 'kd':
         loss_kd = 0
 
     elif args.distill == 'crd':
-        f_s = feat_s[-1]
-        f_t = feat_t[-1]
-        loss_kd = criterion_kd(f_s, f_t, index, contrast_idx)
+        if args.all_layers:
+            g_s = feat_s[1:-1]
+            g_t = feat_t[1:-1]
+            loss_group = torch.stack([c(f_s, f_t, index, contrast_idx) for f_s, f_t, c in zip(g_s, g_t, criterion_kd)])
+            if num_calls % 1000 == 0:
+                print(loss_group)
+            loss_kd = torch.mean(loss_group)
+        else:
+            f_s = feat_s[-1]
+            f_t = feat_t[-1]
+            loss_kd = criterion_kd(f_s, f_t, index, contrast_idx)
 
     elif args.distill == 'hint':
         f_s = module_list[1](feat_s[args.hint_layer])

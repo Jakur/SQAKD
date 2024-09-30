@@ -32,38 +32,41 @@ then
                     --log_dir './results/CIFAR10_VGG8/'$METHOD_TYPE
 
 # EWGS
-elif [ $METHOD_TYPE == "EWGS/W2A2/" ] 
+elif [ $METHOD_TYPE == "EWGS/W4A4/" ] 
 then
     python3 train_quant.py --gpu_id '0' \
                         --arch 'vgg8_bn_quant' \
-                        --weight_levels 4 \
-                        --act_levels 4 \
+                        --weight_levels 16 \
+                        --act_levels 16 \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR10_VGG8/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path './results/CIFAR10_VGG8/fp/checkpoint/last_checkpoint.pth' \
+                        --seed 20240913 \
                         --log_dir './results/CIFAR10_VGG8/'$METHOD_TYPE \
                         --epochs 400
 
 # EWGS + SQAKD
-elif [ $METHOD_TYPE == "EWGS+SQAKD/W2A2/" ] 
+elif [ $METHOD_TYPE == "EWGS+SQAKD/W4A4/" ] 
 then
     python3 train_quant.py --gpu_id '0' \
                         --arch 'vgg8_bn_quant' \
-                        --weight_levels 4 \
-                        --act_levels 4 \
+                        --weight_levels 16 \
+                        --act_levels 16 \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR10_VGG8/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path './results/CIFAR10_VGG8/fp/checkpoint/last_checkpoint.pth' \
                         --log_dir './results/CIFAR10_VGG8/'$METHOD_TYPE \
                         --distill 'kd' \
                         --teacher_arch 'vgg8_bn_fp' \
-                        --teacher_path './results/CIFAR10_VGG8/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path './results/CIFAR10_VGG8/fp/checkpoint/last_checkpoint.pth' \
                         --kd_gamma 0.0 \
                         --kd_alpha 1.0 \
                         --kd_beta 0.0 \
+                        --seed 20240913 \
                         --epochs 400
+
 
 fi
 
