@@ -24,6 +24,37 @@ std = {
 }
 """
 
+def get_augment_transform(jitter_strength=0.5, gaussian_blur=False):
+    color_jitter = transforms.ColorJitter(0.8 * jitter_strength, 0.8 * jitter_strength, 
+                                    0.8 * jitter_strength, 0.2 * jitter_strength)
+    rnd_color_jitter = transforms.RandomApply([color_jitter], p=0.8)
+    rnd_gray = transforms.RandomGrayscale(p=0.2)
+    color_distort = transforms.Compose([rnd_color_jitter, rnd_gray])
+    tfs = [
+        transforms.RandomCrop(32, padding=4), 
+        transforms.RandomHorizontalFlip(),
+        color_distort,
+    ]
+    if gaussian_blur:
+        blur = transforms.GaussianBlur(3) # sigma default is correct
+        tfs.append(transforms.RandomApply([blur], p=0.5))
+    tfs = tfs + [
+        transforms.ToTensor(),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    ]
+    return transforms.Compose(tfs)
+
+def get_heavy_augment_transform():
+    auto = transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10)
+    return transforms.Compose([
+        transforms.RandomCrop(32, padding=4), 
+        transforms.RandomHorizontalFlip(),
+        auto,
+        transforms.ToTensor(),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    ])
+    
+
 
 train_transform = transforms.Compose([
     transforms.RandomCrop(32, padding=4), 
@@ -31,6 +62,8 @@ train_transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
 ])
+# augment_transform = get_augment_transform(gaussian_blur=True)
+augment_transform = get_heavy_augment_transform()
 test_transform = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
@@ -125,10 +158,7 @@ class CIFAR100Instance(datasets.CIFAR100):
     """CIFAR100Instance Dataset.
     """
     def __getitem__(self, index):
-        if self.train:
-            img, target = self.data[index], self.targets[index]
-        else:
-            img, target = self.test_data[index], self.test_labels[index]
+        img, target = self.data[index], self.targets[index]
 
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
@@ -141,12 +171,42 @@ class CIFAR100Instance(datasets.CIFAR100):
             target = self.target_transform(target)
 
         return img, target, index
+    
+class CIFAR100Augment(datasets.CIFAR100):
+    """CIFAR100DataAugmentation Dataset.
+    """
+    def __getitem__(self, index):
+        img, target = self.data[index], self.targets[index]
+
+        # doing this so that it is consistent with all other datasets
+        # to return a PIL Image
+        img = Image.fromarray(img)
+
+        if self.transform is not None:
+            img1, img2 = self.transform(img), self.transform(img)
+        else:
+            return NotImplementedError
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return img1, img2, index
 
 
-def get_cifar100_dataloaders(data_folder, is_instance=False):
+def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=False):
     """
     cifar 100
     """
+    if self_supervised:
+        train_set = CIFAR100Augment(root=data_folder,
+                                download=True,
+                                train=True,
+                                transform=augment_transform)
+        test_set = CIFAR100Augment(root=data_folder,
+                        download=True,
+                        train=False,
+                        transform=augment_transform)
+        return train_set, test_set
     if is_instance:
         train_set = CIFAR100Instance(root=data_folder,
                                      download=True,

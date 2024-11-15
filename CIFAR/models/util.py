@@ -1,5 +1,7 @@
 from __future__ import print_function
 
+import torch
+import torch.nn.functional as F
 import torch.nn as nn
 import math
 
@@ -268,23 +270,67 @@ class PoolEmbed(nn.Module):
         return self.embed(x)
 
 
+class Centroid(nn.Module):
+    def __init__(self, num_classes=100):
+        super().__init__()
+        self.num_classes = num_classes
+        self.is_ready = False
+        self.centroids = nn.Parameter(torch.zeros((num_classes, num_classes)), requires_grad=False)
+        self.storage = nn.Parameter(torch.zeros((num_classes, num_classes)), requires_grad=False)
+
+    def forward(self, logits: torch.tensor, targets: torch.tensor):
+        # storage [num_classes, num_classes] AKA [target, average logits]
+        with torch.no_grad():
+            output = F.softmax(logits, 1)
+            if targets.dim() != output.dim():
+                targets = targets.expand((self.num_classes, -1)).T
+            else:
+                raise NotImplementedError
+            out = torch.zeros_like(self.storage).to(logits.device)
+            out.scatter_reduce_(0, targets, output, "sum")
+            self.storage += out
+        
+
+    def update_centroids(self):
+        self.is_ready = True
+        self.centroids.copy_(self.storage / 500.0) # Todo track updates, do not hardcode this to CIFAR-100
+        self.storage.copy_(torch.zeros_like(self.storage))
+
+    def get_centroids(self, target):
+        return torch.index_select(self.centroids, 0, target)
+
+    def get_loss(self, logits: torch.tensor, targets: torch.tensor):
+        if self.is_ready:
+            centroids = self.get_centroids(targets)
+            surrogate_loss = -1.0 * F.kl_div(centroids.log(), F.log_softmax(logits, 1), reduction="batchmean", log_target=True)
+            return surrogate_loss
+        else:
+            return 0.0
+
+
+
 if __name__ == '__main__':
     import torch
+    centroid = Centroid(num_classes=100)
+    logits = torch.ones((16, 100))
+    classes = torch.tensor([1, 5, 10, 10, 10, 10, 10, 1, 0, 2, 3, 4, 50, 50, 60, 69], dtype=torch.long)
+    centroid(logits, classes)
+    print(centroid.storage[0:12])
 
-    g_s = [
-        torch.randn(2, 16, 16, 16),
-        torch.randn(2, 32, 8, 8),
-        torch.randn(2, 64, 4, 4),
-    ]
-    g_t = [
-        torch.randn(2, 32, 16, 16),
-        torch.randn(2, 64, 8, 8),
-        torch.randn(2, 128, 4, 4),
-    ]
-    s_shapes = [s.shape for s in g_s]
-    t_shapes = [t.shape for t in g_t]
+    # g_s = [
+    #     torch.randn(2, 16, 16, 16),
+    #     torch.randn(2, 32, 8, 8),
+    #     torch.randn(2, 64, 4, 4),
+    # ]
+    # g_t = [
+    #     torch.randn(2, 32, 16, 16),
+    #     torch.randn(2, 64, 8, 8),
+    #     torch.randn(2, 128, 4, 4),
+    # ]
+    # s_shapes = [s.shape for s in g_s]
+    # t_shapes = [t.shape for t in g_t]
 
-    net = ConnectorV2(s_shapes, t_shapes)
-    out = net(g_s)
-    for f in out:
-        print(f.shape)
+    # net = ConnectorV2(s_shapes, t_shapes)
+    # out = net(g_s)
+    # for f in out:
+    #     print(f.shape)

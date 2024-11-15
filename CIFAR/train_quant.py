@@ -271,6 +271,9 @@ if args.quan_method == "EWGS" or args.baseline:
     logging.info("# quantizer params: {}".format(sum(p.numel() for p in quant_params)))
     if sum(p.numel() for p in trainable_params) != sum(p.numel() for p in model_params) + sum(p.numel() for p in quant_params):
         raise Exception('Mismatched number of trainable parmas')
+elif args.quan_method == "None":
+    model_params = list(model.parameters())
+    quant_params = []
 else:
     raise NotImplementedError(f"Not implement {args.quan_method}!")
 

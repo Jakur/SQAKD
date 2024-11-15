@@ -4,11 +4,13 @@ import os
 import random
 import sys
 import time
+import itertools
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import torch.nn as nn
+from safetensors.torch import save_file
 
 import utils
 
@@ -17,6 +19,8 @@ from models.custom_models_vgg import *
 
 from dataset.cifar100 import get_cifar100_dataloaders
 from dataset.cifar10 import get_cifar10_dataloaders
+from models.util import Centroid, Embed
+from torchmetrics.aggregation import MeanMetric
 
 
 start_time = time.time()
@@ -52,11 +56,16 @@ parser.add_argument('--momentum', type=float, default=0.9, help='momentum for SG
 parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay for model parameters')
 parser.add_argument('--lr_scheduler_m', type=str, default='cosine', choices=('step','cosine'), help='type of the scheduler')
 parser.add_argument('--gamma', type=float, default=0.1, help='decaying factor (for step)')
+parser.add_argument('--use_cmi', type=str2bool, default=False, help="Track CMI")
+parser.add_argument('--cmi_weight', type=float, default=0.0, help="Contextual Mutual Information weight")
+parser.add_argument('--self_supervised', type=str2bool, default=False)
 
 
 # logging and misc
 parser.add_argument('--gpu_id', type=str, default='0', help='target GPU to use')
 parser.add_argument('--log_dir', type=str, default='./results/ResNet20_CIFAR10/fp/')
+parser.add_argument('--load_pretrain', type=str2bool, default=False, help='load pretrained full-precision model')
+parser.add_argument('--pretrain_path', type=str, default='./results/ResNet20_CIFAR10/fp/checkpoint/last_checkpoint.pth', help='path for pretrained full-preicion model')
 args = parser.parse_args()
 arg_dict = vars(args)
 
@@ -109,15 +118,19 @@ elif args.dataset == 'cifar100':
 else:
     raise NotImplementedError
 
-train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-                                           batch_size=args.batch_size,
-                                           shuffle=True,
-                                           num_workers=args.num_workers,
-                                           worker_init_fn=None if args.seed is None else _init_fn)
-test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
-                                          batch_size=100,
-                                          shuffle=False,
-                                          num_workers=args.num_workers)
+def get_loaders(train_dataset, test_dataset):
+    train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
+                                            batch_size=args.batch_size,
+                                            shuffle=True,
+                                            num_workers=args.num_workers,
+                                            worker_init_fn=None if args.seed is None else _init_fn)
+    test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
+                                            batch_size=100,
+                                            shuffle=False,
+                                            num_workers=args.num_workers)
+    return train_loader, test_loader 
+
+train_loader, test_loader = get_loaders(train_dataset, test_dataset)
 
 ### initialize model
 model_class = globals().get(args.arch)
@@ -130,10 +143,20 @@ logging.info("The number of parameters : {}".format(num_total_params))
 
 ### initialize optimizer, scheduler, loss function
 # optimizer for model params
-if args.optimizer_m == 'SGD':
-    optimizer_m = torch.optim.SGD(model.parameters(), lr=args.lr_m, momentum=args.momentum, weight_decay=args.weight_decay)
-elif args.optimizer_m == 'Adam':
-    optimizer_m = torch.optim.Adam(model.parameters(), lr=args.lr_m, weight_decay=args.weight_decay)
+
+if args.self_supervised:
+    head = Embed(dim_in=100).to(device)
+    params = itertools.chain(*[model.parameters(), head.parameters()])
+else:
+    params = model.parameters()
+
+def get_optimizer(params):
+    if args.optimizer_m == 'SGD':
+        return torch.optim.SGD(params, lr=args.lr_m, momentum=args.momentum, weight_decay=args.weight_decay)
+    elif args.optimizer_m == 'Adam':
+        return torch.optim.Adam(params, lr=args.lr_m, weight_decay=args.weight_decay)
+
+optimizer_m = get_optimizer(params)
     
 # scheduler for model params
 if args.lr_scheduler_m == "step":
@@ -148,12 +171,83 @@ elif args.lr_scheduler_m == "cosine":
 criterion = nn.CrossEntropyLoss()
 
 writer = SummaryWriter(args.log_dir)
+total_iter = 0
+# assert(False) # Dummy return
+if args.self_supervised:
+    from pytorch_metric_learning import losses
+    a_train_dataset, a_test_dataset = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", self_supervised=True)
+    augment_train_loader, augment_test_loader = get_loaders(a_train_dataset, a_test_dataset)
+    loss_fn = losses.SelfSupervisedLoss(losses.NTXentLoss(temperature=0.5))
+    for ep in range(args.epochs):
+        info_str = f"Starting self supervised epoch {ep}..."
+        print(info_str)
+        logging.info(info_str)
+        model.train()
+        writer.add_scalar('train/model_lr', optimizer_m.param_groups[0]['lr'], ep)
+        for img1, img2, _ in augment_train_loader:
+            img1 = img1.to(device)
+            img2 = img2.to(device)
+
+            optimizer_m.zero_grad()
+
+            repr1 = model(img1)
+            repr1 = head(torch.relu(repr1))
+
+            repr2 = model(img2)
+            repr2 = head(torch.relu(repr2))
+
+            loss = loss_fn(repr1, repr2)
+            writer.add_scalar("train/self_super_loss", loss.item(), total_iter)
+            loss.backward()
+            optimizer_m.step()
+            total_iter += 1
+
+        scheduler_m.step()
+
+        with torch.no_grad():
+            model.eval()
+            avg_loss = MeanMetric()
+            for img1, img2, _ in augment_test_loader:
+                img1 = img1.to(device)
+                img2 = img2.to(device)
+
+                optimizer_m.zero_grad()
+
+                repr1 = model(img1)
+                repr1 = head(torch.relu(repr1))
+
+                repr2 = model(img2)
+                repr2 = head(torch.relu(repr2))
+                loss = loss_fn(repr1, repr2)
+                avg_loss.update(loss.item())
+            avg_loss = avg_loss.compute().item()
+            writer.add_scalar("test/self_super_loss", avg_loss, ep)
+            if ep > 0 and ep % 180 == 0:
+                torch.save({
+                    'epoch':ep,
+                    'test_acc': avg_loss,
+                    'model':model.state_dict(),
+                    'optimizer_m':optimizer_m.state_dict(),
+                    'scheduler_m':scheduler_m.state_dict(),
+                    'criterion':criterion.state_dict()
+                }, os.path.join(args.log_dir,f'checkpoint/checkpoint_{ep}.pth'))
+
+
+    train_epochs = 50
+    optimizer_m = torch.optim.SGD(model.classifier.parameters(), lr=1e-2)
+    scheduler_m = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_m, T_max=train_epochs, eta_min=args.lr_m_end)
+else:
+    train_epochs = args.epochs
 
 ### train
-total_iter = 0
 best_acc = 0
-for ep in range(args.epochs):
-    model.train()
+baseline_cmi = None
+cmi = Centroid().to(device)
+for ep in range(train_epochs):
+    if args.self_supervised:
+        model.eval() # Turn off batch norm "learning"
+    else:
+        model.train()
     writer.add_scalar('train/model_lr', optimizer_m.param_groups[0]['lr'], ep)
     for i, (images, labels) in enumerate(train_loader):
         images = images.to(device)
@@ -162,9 +256,14 @@ for ep in range(args.epochs):
         optimizer_m.zero_grad()
             
         pred = model(images)
+
         loss_t = criterion(pred, labels)
-        
-        loss = loss_t
+        if args.use_cmi and cmi.is_ready:
+            loss_cmi = cmi.get_loss(pred, labels)
+            writer.add_scalar("train/cmi", -1.0 * loss_cmi, total_iter)
+            loss = loss_t + args.cmi_weight * loss_cmi.clamp(baseline_cmi, 0.0)
+        else:
+            loss = loss_t
         loss.backward()
         
         optimizer_m.step()
@@ -184,6 +283,24 @@ for ep in range(args.epochs):
             _, predicted = torch.max(pred.data, 1)
             total += pred.size(0)
             correct_classified += (predicted == labels).sum().item()
+            cmi(pred, labels)
+            
+        cmi.update_centroids()
+        if baseline_cmi is None:
+            mean_cmi = MeanMetric().to(device)
+            for i, (images, labels) in enumerate(train_loader):
+                images = images.to(device)
+                labels = labels.to(device)
+                pred = model(images)
+                loss_cmi = cmi.get_loss(pred, labels)
+                mean_cmi.update(loss_cmi)
+                baseline_cmi = mean_cmi.compute().item()
+        # tensors = {
+        #     "centroids": cmi.centroids,
+        #     "storage": cmi.storage,
+        # }
+        # save_file(tensors, "centroids.safetensors")
+        # assert(False)
         test_acc = correct_classified/total*100
         writer.add_scalar('train/acc', test_acc, ep)
 
@@ -201,15 +318,15 @@ for ep in range(args.epochs):
         print("Current epoch: {:03d}".format(ep), "\t Test accuracy:", test_acc, "%")
         logging.info("Current epoch: {:03d}\t Test accuracy: {}%".format(ep, test_acc))
         writer.add_scalar('test/acc', test_acc, ep)
-
-        torch.save({
-            'epoch':ep,
-            'test_acc': test_acc,
-            'model':model.state_dict(),
-            'optimizer_m':optimizer_m.state_dict(),
-            'scheduler_m':scheduler_m.state_dict(),
-            'criterion':criterion.state_dict()
-        }, os.path.join(args.log_dir,'checkpoint/last_checkpoint.pth'))
+        if args.epochs - ep < 25: # Only save near the end of the run
+            torch.save({
+                'epoch':ep,
+                'test_acc': test_acc,
+                'model':model.state_dict(),
+                'optimizer_m':optimizer_m.state_dict(),
+                'scheduler_m':scheduler_m.state_dict(),
+                'criterion':criterion.state_dict()
+            }, os.path.join(args.log_dir,'checkpoint/last_checkpoint.pth'))
         if test_acc > best_acc:
             best_acc = test_acc
             torch.save({
