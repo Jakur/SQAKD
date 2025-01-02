@@ -6,10 +6,11 @@ import sys
 
 from .custom_modules import QConv
 from .blocks_resnet import BasicBlock, QBasicBlock
+from lightly.models import ResNetGenerator
 
 
 
-__all__ = ['resnet20_quant', 'resnet20_fp', 'resnet32_quant', 'resnet32_fp', 'resnet18_fp', 'resnet18_quant']
+__all__ = ['resnet20_quant', 'resnet20_fp', 'resnet32_quant', 'resnet32_fp', 'resnet18_fp', 'resnet18_quant', 'resnet18_fp_ssl']
 
 
 
@@ -126,6 +127,20 @@ class ResNet(nn.Module):
         else:
             return out
 
+# TODO make this type work with distillation / quantization, etc. 
+class SSLResnet(nn.Module):
+    def __init__(self, resnet, num_classes, dim=512):
+        super().__init__()
+        self.backbone = nn.Sequential(
+            *list(resnet.children())[:-1], nn.AdaptiveAvgPool2d(1)
+        )
+        self.classifier = nn.Linear(dim, num_classes)
+
+    def forward(self, x):
+        features = self.backbone(x).squeeze()
+        features = torch.nn.functional.normalize(features, dim=1)
+        return self.classifier(features)
+
 
 # resnet20
 def resnet20_fp(args):
@@ -152,6 +167,9 @@ def resnet18_fp(args):
 
 def resnet18_quant(args):
     return ResNet(QBasicBlock, [2, 2, 2, 2], args)
+
+def resnet18_fp_ssl(args):
+    return SSLResnet(ResNetGenerator("resnet-18"), args.num_classes)
 
 
 def test(net):

@@ -75,12 +75,12 @@ class VGG(nn.Module):
 
         print(f"\033[91mCreate VGG, block: {block}, cfg: {cfg}, num_classes: {num_classes} \033[0m")
 
-        self.args = args 
-        self.layer0 = self._make_layer0(VGGBlock, cfg[0], batch_norm, 3)
-        self.layer1 = self._make_layers(block, cfg[1], batch_norm, cfg[0][-1])
-        self.layer2 = self._make_layers(block, cfg[2], batch_norm, cfg[1][-1])
-        self.layer3 = self._make_layers(block, cfg[3], batch_norm, cfg[2][-1])
-        self.layer4 = self._make_layers(block, cfg[4], batch_norm, cfg[3][-1])
+        # self.args = args 
+        self.layer0 = self._make_layer0(VGGBlock, cfg[0], args, batch_norm, 3)
+        self.layer1 = self._make_layers(block, cfg[1], args, batch_norm, cfg[0][-1])
+        self.layer2 = self._make_layers(block, cfg[2], args, batch_norm, cfg[1][-1])
+        self.layer3 = self._make_layers(block, cfg[3], args, batch_norm, cfg[2][-1])
+        self.layer4 = self._make_layers(block, cfg[4], args, batch_norm, cfg[3][-1])
 
         self.pool0 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.pool1 = nn.MaxPool2d(kernel_size=2, stride=2)
@@ -92,23 +92,23 @@ class VGG(nn.Module):
         self._initialize_weights()
     
 
-    def _make_layer0(self, block, cfg, batch_norm=False, in_channels=3):
+    def _make_layer0(self, block, cfg, args, batch_norm=False, in_channels=3):
         layers = []
         for v in cfg:
-            layers.append(block(in_channels, v, batch_norm, self.args))
+            layers.append(block(in_channels, v, batch_norm, args))
             in_channels = v
         return nn.Sequential(*layers)
 
-    def _make_layers(self, block, cfg, batch_norm=False, in_channels=3):
+    def _make_layers(self, block, cfg, args, batch_norm=False, in_channels=3):
         layers = []
         for v in cfg:
-            layers.append(block(in_channels, v, batch_norm, self.args))
+            layers.append(block(in_channels, v, batch_norm, args))
             in_channels = v
         return MySequential(*layers)
 
 
-    def set_replacing_rate(self, replacing_rate):
-        self.args.replacing_rate = replacing_rate
+    # def set_replacing_rate(self, replacing_rate):
+    #     self.args.replacing_rate = replacing_rate
 
 
     def _initialize_weights(self):

@@ -77,6 +77,9 @@ def init_quant_model(model, train_loader, device, distill=None):
 
     if distill == 'crd' or distill == 'crdst':
         images, labels, index, contrast_idx = next(iterloader)
+    elif distill == 'siam':
+        multi_view, labels = next(iterloader)
+        images = multi_view[0]
     else:
         images, labels = next(iterloader) 
 

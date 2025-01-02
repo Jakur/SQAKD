@@ -2,8 +2,61 @@ import torch
 from torch import nn
 from .memory import ContrastMemory
 import sys
+from lightly.loss import NegativeCosineSimilarity
+from lightly.models.modules import SimSiamPredictionHead, SimSiamProjectionHead
+from lightly.models.modules import heads
 
 eps = 1e-7
+
+class FastSiamLoss(nn.Module):
+
+    def __init__(self, input_size=512):
+        super().__init__()
+        self.embed_t = SiamModule(input_size=input_size)
+        self.embed_s = SiamModule(input_size=input_size)
+        self.criterion = NegativeCosineSimilarity()
+
+    def forward(self, s_views, t_views):
+        features = [self.embed_t(view) for view in t_views]
+        zs = torch.stack([z for z, _ in features])
+        ps = torch.stack([p for _, p in features])
+        device = zs.device
+
+        student_features = [self.embed_s(view) for view in s_views]
+        student_ps = torch.stack([p for _, p in student_features])
+
+        loss = 0.0
+        for i in range(len(t_views)):
+            mask = torch.arange(len(t_views), device=device) != i
+            avg_z = torch.mean(zs[mask], dim=0)
+            loss += self.criterion(ps[i], avg_z) / len(t_views) # Teacher loss
+            loss += self.criterion(student_ps[i], avg_z) / len(s_views) # Student loss
+        return loss
+
+
+class SiamModule(nn.Module):
+
+    def __init__(self, input_size=512):
+        super().__init__()
+        self.prediction_head = heads.SimSiamPredictionHead(2048, 512, 2048)
+        # use a 2-layer projection head for cifar10 as described in the paper
+        self.projection_head = heads.ProjectionHead(
+            [
+                (input_size, 2048, nn.BatchNorm1d(2048), nn.ReLU(inplace=True)),
+                (2048, 2048, nn.BatchNorm1d(2048), None),
+            ]
+        )
+        # self.backbone = nn.AdaptiveAvgPool2d(2) # Dimensionality reduction 
+        # self.backbone = nn.Identity()
+        # self.projection_head = SimSiamProjectionHead(input_size, 512, 128)
+        # self.prediction_head = SimSiamPredictionHead(128, 64, 128)
+
+    def forward(self, x):
+        f = x.flatten(start_dim=1)
+        z = self.projection_head(f)
+        p = self.prediction_head(z)
+        z = z.detach()
+        return z, p
 
 
 class CRDLoss(nn.Module):

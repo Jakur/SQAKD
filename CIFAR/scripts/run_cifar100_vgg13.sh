@@ -40,6 +40,21 @@ then
                     --seed 20240913 \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
+elif [ $METHOD_TYPE == "fp3/" ]
+then 
+    python3 train_fp.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'vgg13_bn_fp' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --seed 20240913 \
+                    --aggressive_transforms True \
+                    --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
+
 elif [ $METHOD_TYPE == "fp_cmi/" ]
 then 
     python3 train_fp.py --gpu_id '0' \
@@ -72,7 +87,7 @@ then
                     --cmi_weight 0.50 \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
-elif [ $METHOD_TYPE == "fp_self6/" ]
+elif [ $METHOD_TYPE == "fp_self8/" ]
 then 
     python3 train_fp.py --gpu_id '0' \
                     --dataset 'cifar100' \
@@ -195,7 +210,7 @@ then
                         --kd_alpha 1.0 \
                         --kd_beta 0.0
 
-elif [ $METHOD_TYPE == "crd25/" ] 
+elif [ $METHOD_TYPE == "crd28/" ] 
 then
     python3 train_quant.py --gpu_id '0' \
                         --dataset 'cifar100' \
@@ -224,9 +239,41 @@ then
                         --kd_gamma 0.0 \
                         --kd_alpha 1.0 \
                         --kd_beta 1.25 \
-                        --all_layers 'True'
+                        --all_layers 'True' \
+                        --crd_no_labels 'True'
 
-elif [ $METHOD_TYPE == "crd26/" ] 
+elif [ $METHOD_TYPE == "siam_sanity6/" ] 
+then
+    python3 train_quant.py --gpu_id '0' \
+                        --dataset 'cifar100' \
+                        --arch 'vgg13_bn_quant' \
+                        --num_workers 8 \
+                        --batch_size 64 \
+                        --weight_decay 5e-4 \
+                        --optimizer_m 'Adam' \
+                        --optimizer_q 'Adam' \
+                        --lr_m 5e-4 \
+                        --lr_q 5e-6 \
+                        --lr_scheduler_m 'cosine' \
+                        --lr_scheduler_q 'cosine' \
+                        --epochs 200 \
+                        --weight_levels 4 \
+                        --act_levels 4 \
+                        --baseline False \
+                        --use_hessian True \
+                        --load_pretrain True \
+                        --pretrain_path './results/CIFAR100_VGG13/fp3/checkpoint/last_checkpoint.pth' \
+                        --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
+                        --distill 'siam' \
+                        --teacher_arch 'vgg13_bn_fp' \
+                        --teacher_path './results/CIFAR100_VGG13/fp3/checkpoint/last_checkpoint.pth' \
+                        --seed 20240913 \
+                        --num_transforms 3 \
+                        --kd_gamma 1.0 \
+                        --kd_alpha 1.0 \
+                        --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "crd27/" ] 
 then
     python3 train_quant.py --gpu_id '0' \
                         --dataset 'cifar100' \
@@ -255,7 +302,8 @@ then
                         --kd_gamma 0.0 \
                         --kd_alpha 1.0 \
                         --kd_beta 0.75 \
-                        --all_layers 'True'
+                        --all_layers 'True' \
+                        --crd_no_labels 'True'
 
 elif [ $METHOD_TYPE == "crd4_all/" ] 
 then

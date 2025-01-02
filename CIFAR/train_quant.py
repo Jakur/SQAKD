@@ -88,7 +88,7 @@ parser.add_argument('--pretrain_path', type=str, default='./results/ResNet20_CIF
 # knowledge distillation
 parser.add_argument('--distill', type=str, default=None, choices=['kd', 'crdst','hint', 'attention', 'similarity',
                                                     'correlation', 'vid', 'crd', 'kdsvd', 'fsp',
-                                                    'rkd', 'pkt', 'abound', 'factor', 'nst'])
+                                                    'rkd', 'pkt', 'abound', 'factor', 'nst', 'siam'])
 parser.add_argument('--teacher_path', type=str)
 parser.add_argument('--teacher_arch', type=str)
 parser.add_argument('--kd_T', type=float, default=4, help='temperature for KD distillation')
@@ -106,6 +106,8 @@ parser.add_argument('--nce_k', default=16384, type=int, help='number of negative
 parser.add_argument('--nce_t', default=0.1, type=float, help='temperature parameter for softmax') 
 parser.add_argument('--nce_m', default=0.5, type=float, help='momentum for non-parametric updates')
 parser.add_argument('--head', default='linear', type=str, choices=['linear', 'mlp', 'pad'])
+parser.add_argument('--crd_no_labels', type=str2bool, default=False, help="Disable using label information for choosing negatives, as in SimCLR")
+parser.add_argument('--num_transforms', default=3, type=int, help="Number of transforms to use for SimSiam Distillation")
 
 # hint layer
 parser.add_argument('--hint_layer', default=2, type=int, choices=[0, 1, 2, 3, 4])
@@ -171,7 +173,9 @@ if args.dataset == 'cifar10':
 elif args.dataset == 'cifar100':
     args.num_classes = 100
     if args.distill == 'crd' or args.distill == 'crdst':
-        train_dataset, test_dataset = get_cifar100_dataloaders_sample(data_folder="../data/CIFAR100/", k=args.nce_k, mode=args.mode)
+        train_dataset, test_dataset = get_cifar100_dataloaders_sample(data_folder="../data/CIFAR100/", k=args.nce_k, mode=args.mode, no_labels=args.crd_no_labels)
+    elif args.distill == 'siam':
+        train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="../data/CIFAR100/", is_augment=True, num_transforms=args.num_transforms)
     else:
         train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="../data/CIFAR100/", is_instance=False)
 
@@ -389,7 +393,10 @@ for ep in range(args.epochs):
             images, labels = data
             index = None
             contrast_idx = None
-        images = images.to(device)
+        if isinstance(images, list):
+            images = [img.to(device) for img in images]
+        else:
+            images = images.to(device)
         labels = labels.to(device)
         
         optimizer_m.zero_grad()
@@ -407,29 +414,68 @@ for ep in range(args.epochs):
             save_dict = None
             lambda_dict = None
 
+        def combine(model_outputs, is_teacher):
+            feats = [] # Outer Dim [img_id], Inner Dim [Layer_id]
+            logits = []
+            for output in model_outputs:
+                fs, _, logit = output
+                if is_teacher:
+                    feats.append([f.detach() for f in fs])
+                else:
+                    feats.append([f for f in fs])
+                logits.append(logit)
+            # for lis in feats:
+            #     print("[")
+            #     for f in lis:
+            #         print(f.size())
+            #     print("]")
+
+            # feats = torch.stack(feats).transpose(0, 1) # Outer dim = Layer, Inner dim = Img
+            logits = torch.cat(logits)
+            return feats, None, logits
+
         # distillation, teacher and student do forward
         if args.distill:
             flatGroupOut = True if args.distill == 'crdst' else False # for crdst
             preact = False
             if args.distill in ['abound']:
                 preact = True
-            feat_s, block_out_s, logit_s = model_s(images, save_dict, lambda_dict, is_feat=True, preact=preact, flatGroupOut=flatGroupOut)
+
+            if isinstance(images, list):
+                temp = [model_s(img, save_dict, lambda_dict, is_feat=True, preact=preact, flatGroupOut=flatGroupOut) for img in images]
+                feat_s, block_out_s, logit_s = combine(temp, False)
+            else:
+                feat_s, block_out_s, logit_s = model_s(images, save_dict, lambda_dict, is_feat=True, preact=preact, flatGroupOut=flatGroupOut)
             with torch.no_grad():
-                feat_t, block_out_t, logit_t = model_t(images, is_feat=True, preact=preact, flatGroupOut=flatGroupOut)
-                feat_t = [f.detach() for f in feat_t]
+                if isinstance(images, list):
+                    temp = [model_t(img, is_feat=True, preact=preact, flatGroupOut=flatGroupOut) for img in images]
+                    feat_t, block_out_t, logit_t = combine(temp, True)
+                else:
+                    feat_t, block_out_t, logit_t = model_t(images, is_feat=True, preact=preact, flatGroupOut=flatGroupOut)
+                    feat_t = [f.detach() for f in feat_t]
         else:
             pred = model(images, save_dict, lambda_dict)
         
         #======================================Backward======================================
         if args.distill:
             # cls + kl div
+            if isinstance(images, list):
+                all_labels = []
+                for _ in range(len(images)):
+                    all_labels.append(labels)
+                labels = torch.cat(all_labels)
             loss_cls = criterion_cls(logit_s, labels)
             loss_div = criterion_div(logit_s, logit_t)
             if args.distill == "crdst":
                 loss_kd_crd, loss_kd_crdSt = utils_distill.get_loss_crdst(args, feat_s, feat_t, criterion_kd, index, contrast_idx, block_out_s, block_out_t)
                 loss_total = args.kd_gamma * loss_cls + args.kd_alpha * loss_div + + args.kd_beta * loss_kd_crd + args.kd_theta * loss_kd_crdSt 
             else:
-                loss_kd = utils_distill.get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast_idx)
+                # Short circuit
+                if args.kd_beta != 0.0:
+                    loss_kd = utils_distill.get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast_idx)
+                else:
+                    loss_kd = 0.0
+                
                 loss_total = args.kd_gamma * loss_cls + args.kd_alpha * loss_div + args.kd_beta * loss_kd 
                 
                 # track loss
@@ -472,6 +518,9 @@ for ep in range(args.epochs):
                 images, labels, index, contrast_idx = data
                 index = index.to(device)
                 contrast_idx = contrast_idx.to(device)
+            elif args.distill == "siam":
+                images, labels = data
+                images = images[0]
             else:
                 images, labels = data
                 index = None

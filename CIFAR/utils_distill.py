@@ -9,7 +9,7 @@ from models.util import Connector, Translator, Paraphraser
 from distiller_zoo import SimilarityTransfer
 from distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, VIDLoss, RKDLoss
 from distiller_zoo import FactorTransfer, FSP, NSTLoss
-from crd.criterion import CRDLoss
+from crd.criterion import CRDLoss, FastSiamLoss
 
 from utils import printRed
  
@@ -36,6 +36,21 @@ def define_distill_module_and_loss(model_s, model_t, model_params, args, n_data,
     criterion_div = DistillKL(args.kd_T)
     if args.distill == 'kd':
         criterion_kd = DistillKL(args.kd_T)
+
+    elif args.distill == 'siam':
+        args.s_dim = feat_s[-1].shape[1]
+        args.t_dim = feat_t[-1].shape[1]
+        print("Standard s_dim, t_dim")
+        print(args.s_dim)
+        print(args.t_dim)
+        criterion_kd = FastSiamLoss(input_size=args.s_dim)
+        module_list.append(criterion_kd.embed_s)
+        module_list.append(criterion_kd.embed_t)
+
+        for name, param in criterion_kd.embed_s.named_parameters():
+            model_params.append(param)
+        for name, param in criterion_kd.embed_t.named_parameters():
+            model_params.append(param)
 
     elif args.distill == 'crd':
         args.s_dim = feat_s[-1].shape[1]
@@ -172,6 +187,12 @@ def get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast
 
     if args.distill == 'kd':
         loss_kd = 0
+
+    elif args.distill == 'siam':
+        # Assume fastsiam, one layer
+        f_s = [layer[-1] for layer in feat_s] # Get last layer across all img views
+        f_t = [layer[-1] for layer in feat_t] # Get last layer across all img views
+        loss_kd = criterion_kd(f_s, f_t)
 
     elif args.distill == 'crd':
         if args.all_layers:

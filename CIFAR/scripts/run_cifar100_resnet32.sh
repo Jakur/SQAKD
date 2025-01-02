@@ -47,6 +47,34 @@ then
 
 # === W2A2
 # EWGS_hess, Adam_lrm5e-4_lrq5e-6
+elif [ $METHOD_TYPE == "fp_resnet18_cifar100/" ] 
+then
+    python3 train_fp.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet18_fp' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --log_dir '../results/CIFAR100_ResNet32/'$METHOD_TYPE
+
+elif [ $METHOD_TYPE == "fp_resnet18_ssl_cifar100/" ] 
+then
+    python3 train_fp.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet18_fp_ssl' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --log_dir '../results/CIFAR100_ResNet32/'$METHOD_TYPE
+
+# === W2A2
+# EWGS_hess, Adam_lrm5e-4_lrq5e-6
 elif [ $METHOD_TYPE == "720epochs/EWGS_hess_Adam_lrm5e-4_lrq5e-6/W2A2/" ] 
 then
     python3 train_quant.py --gpu_id '2' \
