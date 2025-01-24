@@ -242,7 +242,38 @@ then
                         --all_layers 'True' \
                         --crd_no_labels 'True'
 
-elif [ $METHOD_TYPE == "siam_sanity6/" ] 
+elif [ $METHOD_TYPE == "siam_sanity20/" ] 
+then
+    python3 train_quant.py --gpu_id '0' \
+                        --dataset 'cifar100' \
+                        --arch 'vgg13_bn_quant' \
+                        --num_workers 8 \
+                        --batch_size 64 \
+                        --weight_decay 5e-4 \
+                        --optimizer_m 'Adam' \
+                        --optimizer_q 'Adam' \
+                        --lr_m 5e-4 \
+                        --lr_q 5e-6 \
+                        --lr_scheduler_m 'cosine' \
+                        --lr_scheduler_q 'cosine' \
+                        --epochs 200 \
+                        --weight_levels 8 \
+                        --act_levels 8 \
+                        --baseline False \
+                        --use_hessian True \
+                        --load_pretrain True \
+                        --pretrain_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth' \
+                        --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
+                        --distill 'siam' \
+                        --teacher_arch 'vgg13_bn_fp' \
+                        --teacher_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth' \
+                        --seed 20240913 \
+                        --num_transforms 3 \
+                        --kd_gamma 1.0 \
+                        --kd_alpha 1.0 \
+                        --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "siam_sanity12/" ] 
 then
     python3 train_quant.py --gpu_id '0' \
                         --dataset 'cifar100' \
@@ -262,13 +293,45 @@ then
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp3/checkpoint/last_checkpoint.pth' \
+                        --pretrain_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth' \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'siam' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp3/checkpoint/last_checkpoint.pth' \
+                        --teacher_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth' \
                         --seed 20240913 \
-                        --num_transforms 3 \
+                        --num_transforms 2 \
+                        --kd_gamma 1.0 \
+                        --kd_alpha 1.0 \
+                        --kd_beta 0.0 \
+
+
+elif [ $METHOD_TYPE == "siam_sanity13/" ] 
+then
+    python3 train_quant.py --gpu_id '0' \
+                        --dataset 'cifar100' \
+                        --arch 'vgg13_bn_quant' \
+                        --num_workers 8 \
+                        --batch_size 64 \
+                        --weight_decay 5e-4 \
+                        --optimizer_m 'Adam' \
+                        --optimizer_q 'Adam' \
+                        --lr_m 5e-4 \
+                        --lr_q 5e-6 \
+                        --lr_scheduler_m 'cosine' \
+                        --lr_scheduler_q 'cosine' \
+                        --epochs 200 \
+                        --weight_levels 4 \
+                        --act_levels 4 \
+                        --baseline False \
+                        --use_hessian True \
+                        --load_pretrain True \
+                        --pretrain_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth' \
+                        --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
+                        --distill 'siam' \
+                        --teacher_arch 'vgg13_bn_fp' \
+                        --teacher_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth' \
+                        --seed 20240913 \
+                        --num_transforms 4 \
                         --kd_gamma 1.0 \
                         --kd_alpha 1.0 \
                         --kd_beta 0.0 \

@@ -8,9 +8,11 @@ import copy
 
 import torch
 from torch.utils.tensorboard import SummaryWriter
+from torchmetrics.aggregation import MeanMetric
 import numpy as np
 import torch.nn as nn
 
+from models.util import Centroid
 from models.custom_modules import *
 from models.custom_models_resnet import *
 from models.custom_models_vgg import *
@@ -286,6 +288,8 @@ if args.distill:
     model_class_t = globals().get(args.teacher_arch)
     model_t = model_class_t(args)
     model_t.to(device)
+    baseline_cmi = None
+    cmi = Centroid().to(device)
 
     model_t = utils.load_teacher_model(model_t, args.teacher_path)
 
@@ -383,7 +387,9 @@ for ep in range(args.epochs):
 
     if define_quantizer_scheduler:
         writer.add_scalar('train/quant_lr', optimizer_q.param_groups[0]['lr'], ep)
-        
+    
+    mean_cmi = MeanMetric().to(device)
+
     for i, data in enumerate(train_loader):
         if args.distill == "crd" or args.distill == "crdst":
             images, labels, index, contrast_idx = data
@@ -414,7 +420,7 @@ for ep in range(args.epochs):
             save_dict = None
             lambda_dict = None
 
-        def combine(model_outputs, is_teacher):
+        def combine(model_outputs, is_teacher, special_max=False):
             feats = [] # Outer Dim [img_id], Inner Dim [Layer_id]
             logits = []
             for output in model_outputs:
@@ -424,6 +430,12 @@ for ep in range(args.epochs):
                 else:
                     feats.append([f for f in fs])
                 logits.append(logit)
+
+            if special_max:
+                logs = torch.stack(logits)
+                logs, _ = torch.max(logs, dim=0)
+                # logs = torch.mean(logs, dim=0)
+                logits = [logs for _ in range(len(logits))]
             # for lis in feats:
             #     print("[")
             #     for f in lis:
@@ -443,13 +455,13 @@ for ep in range(args.epochs):
 
             if isinstance(images, list):
                 temp = [model_s(img, save_dict, lambda_dict, is_feat=True, preact=preact, flatGroupOut=flatGroupOut) for img in images]
-                feat_s, block_out_s, logit_s = combine(temp, False)
+                feat_s, block_out_s, logit_s = combine(temp, False, special_max=False)
             else:
                 feat_s, block_out_s, logit_s = model_s(images, save_dict, lambda_dict, is_feat=True, preact=preact, flatGroupOut=flatGroupOut)
             with torch.no_grad():
                 if isinstance(images, list):
                     temp = [model_t(img, is_feat=True, preact=preact, flatGroupOut=flatGroupOut) for img in images]
-                    feat_t, block_out_t, logit_t = combine(temp, True)
+                    feat_t, block_out_t, logit_t = combine(temp, True, special_max=False)
                 else:
                     feat_t, block_out_t, logit_t = model_t(images, is_feat=True, preact=preact, flatGroupOut=flatGroupOut)
                     feat_t = [f.detach() for f in feat_t]
@@ -466,6 +478,10 @@ for ep in range(args.epochs):
                 labels = torch.cat(all_labels)
             loss_cls = criterion_cls(logit_s, labels)
             loss_div = criterion_div(logit_s, logit_t)
+            with torch.no_grad():
+                cmi(logit_t, labels) # Update for next epoch
+                loss_cmi = cmi.get_loss(logit_t, labels) # Do not use this as a loss term, just for analysis
+                mean_cmi.update(loss_cmi)
             if args.distill == "crdst":
                 loss_kd_crd, loss_kd_crdSt = utils_distill.get_loss_crdst(args, feat_s, feat_t, criterion_kd, index, contrast_idx, block_out_s, block_out_t)
                 loss_total = args.kd_gamma * loss_cls + args.kd_alpha * loss_div + + args.kd_beta * loss_kd_crd + args.kd_theta * loss_kd_crdSt 
@@ -500,11 +516,12 @@ for ep in range(args.epochs):
         if define_quantizer_scheduler:
             optimizer_q.step()
 
-
         writer.add_scalar('train/loss', loss.item(), total_iter)
         total_iter += 1
 
-    
+    distill_cmi = mean_cmi.compute().item()
+    writer.add_scalar("distill_cmi", distill_cmi, ep)
+
     scheduler_m.step()
     if define_quantizer_scheduler:
         scheduler_q.step()
@@ -547,7 +564,7 @@ for ep in range(args.epochs):
             correct_classified += (predicted == labels).sum().item()
         test_acc = correct_classified/total*100
         print("Current epoch: {:03d}".format(ep), "\t Test accuracy:", test_acc, "%")
-        logging.info("Current epoch: {:03d}\t Test accuracy: {}%".format(ep, test_acc))
+        logging.info("Current epoch: {:03d}\t Test accuracy: {}% Distill CMI: {:.4f}".format(ep, test_acc, distill_cmi))
         writer.add_scalar('test/acc', test_acc, ep)
 
         torch.save({
@@ -576,7 +593,7 @@ for ep in range(args.epochs):
         # for record the average acccuracy of the last 5 epochs
         if ep >= args.epochs - 5:
             acc_last5.append(test_acc)
-
+    cmi.update_centroids()
     layer_num = 0
     for m in model.modules():
         if isinstance(m, QConv):

@@ -89,7 +89,8 @@ print('')
 
 ### GPU setting
 os.environ["CUDA_VISIBLE_DEVICES"]= args.gpu_id
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device(f"cuda:{args.gpu_id}")
+# device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ### set the seed number
 if args.seed is not None:
