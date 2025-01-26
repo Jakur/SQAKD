@@ -110,6 +110,7 @@ parser.add_argument('--nce_m', default=0.5, type=float, help='momentum for non-p
 parser.add_argument('--head', default='linear', type=str, choices=['linear', 'mlp', 'pad'])
 parser.add_argument('--crd_no_labels', type=str2bool, default=False, help="Disable using label information for choosing negatives, as in SimCLR")
 parser.add_argument('--num_transforms', default=3, type=int, help="Number of transforms to use for SimSiam Distillation")
+parser.add_argument('--transform', type=str, default="auto", choices=["auto", "trivial", "none"], help="String value indicating transforms to use")
 
 # hint layer
 parser.add_argument('--hint_layer', default=2, type=int, choices=[0, 1, 2, 3, 4])
@@ -177,7 +178,7 @@ elif args.dataset == 'cifar100':
     if args.distill == 'crd' or args.distill == 'crdst':
         train_dataset, test_dataset = get_cifar100_dataloaders_sample(data_folder="../data/CIFAR100/", k=args.nce_k, mode=args.mode, no_labels=args.crd_no_labels)
     elif args.distill == 'siam':
-        train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="../data/CIFAR100/", is_augment=True, num_transforms=args.num_transforms)
+        train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="../data/CIFAR100/", is_augment=True, num_transforms=args.num_transforms, custom_transform=args.transform)
     else:
         train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="../data/CIFAR100/", is_instance=False)
 

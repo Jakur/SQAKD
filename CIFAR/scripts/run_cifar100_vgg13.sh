@@ -40,6 +40,20 @@ then
                     --seed 20240913 \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
+elif [ $METHOD_TYPE == "augment/" ]
+then
+    python3 augment_search.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --teacher_arch 'vgg13_bn_fp' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --seed 20240913 \
+                    --teacher_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth'
+
 elif [ $METHOD_TYPE == "fp3/" ]
 then 
     python3 train_fp.py --gpu_id '0' \
@@ -71,7 +85,7 @@ then
                     --cmi_weight 0.20 \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
-elif [ $METHOD_TYPE == "fp_cmi2/" ]
+elif [ $METHOD_TYPE == "fp_cmi4/" ]
 then 
     python3 train_fp.py --gpu_id '0' \
                     --dataset 'cifar100' \
@@ -84,7 +98,7 @@ then
                     --epochs 720 \
                     --seed 20240913 \
                     --use_cmi True \
-                    --cmi_weight 0.50 \
+                    --cmi_weight 0.10 \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
 elif [ $METHOD_TYPE == "fp_self8/" ]
@@ -242,7 +256,7 @@ then
                         --all_layers 'True' \
                         --crd_no_labels 'True'
 
-elif [ $METHOD_TYPE == "siam_sanity20/" ] 
+elif [ $METHOD_TYPE == "siam_sanity30/" ] 
 then
     python3 train_quant.py --gpu_id '0' \
                         --dataset 'cifar100' \
@@ -257,8 +271,8 @@ then
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
                         --epochs 200 \
-                        --weight_levels 8 \
-                        --act_levels 8 \
+                        --weight_levels 4 \
+                        --act_levels 4 \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
@@ -268,7 +282,7 @@ then
                         --teacher_arch 'vgg13_bn_fp' \
                         --teacher_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth' \
                         --seed 20240913 \
-                        --num_transforms 3 \
+                        --num_transforms 1 \
                         --kd_gamma 1.0 \
                         --kd_alpha 1.0 \
                         --kd_beta 0.0 \

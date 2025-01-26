@@ -43,6 +43,32 @@ def get_augment_transform(jitter_strength=0.5, gaussian_blur=False):
     ]
     return transforms.Compose(tfs)
 
+def found_augment_transform():
+    from torchvision.transforms import v2
+    aug = v2.Compose([
+        v2.RandomAdjustSharpness(p=0.37674046326081456, sharpness_factor=0.473388021620039),
+        v2.ColorJitter(brightness=(0.7787606929447987, 1.2212393070552015), saturation=(0.14031598835343717, 1.859684011646563)),
+        v2.GaussianBlur(kernel_size=(3, 3), sigma=[0.1, 0.24801515642962435]),
+        v2.RandomAffine(degrees=[0.0, 0.0], translate=[0.05638597202397311, 0.05638597202397311], shear=[0.317924972803986, 0.317924972803986], fill=0),
+        v2.RandomAutocontrast(p=0.7480985007308912),
+    ])
+    return transforms.Compose([
+        transforms.RandomCrop(32, padding=4), 
+        transforms.RandomHorizontalFlip(),
+        aug,
+        transforms.ToTensor(),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    ])
+
+def build_augmentation_transform(extra: list):
+    return transforms.Compose([
+        transforms.RandomCrop(32, padding=4), 
+        transforms.RandomHorizontalFlip(),
+        transforms.Compose(extra),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    ])
+
 def get_heavy_augment_transform():
     auto = transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10)
     return transforms.Compose([
@@ -52,7 +78,16 @@ def get_heavy_augment_transform():
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ])
-    
+
+def get_trivial_transform():
+    trivial = transforms.TrivialAugmentWide()
+    return transforms.Compose([
+        transforms.RandomCrop(32, padding=4), 
+        transforms.RandomHorizontalFlip(),
+        trivial,
+        transforms.ToTensor(),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    ])
 
 
 train_transform = transforms.Compose([
@@ -203,7 +238,7 @@ class CIFAR100Augment(datasets.CIFAR100):
         return imgs, target
 
 
-def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=False, is_augment=False, num_transforms=3, agg_trans=False):
+def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=False, is_augment=False, num_transforms=3, agg_trans=False, custom_transform=None):
     """
     cifar 100
     """
@@ -223,15 +258,31 @@ def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=Fal
                                      train=True,
                                      transform=train_transform)
     elif is_augment:
+        if custom_transform is not None:
+            if isinstance(custom_transform, str):
+                if custom_transform == "auto":
+                    trans = get_heavy_augment_transform()
+                elif custom_transform == "trivial":
+                    trans = get_trivial_transform()
+                else:
+                    trans = train_transform
+            else:
+                trans = custom_transform
+        else:
+            trans = get_heavy_augment_transform()
         train_set = CIFAR100Augment(num_transforms=num_transforms, 
                                     root=data_folder,
                                      download=True,
                                      train=True,
-                                     transform=get_heavy_augment_transform())
+                                     transform=trans)
     else:
-        trans = train_transform
-        if agg_trans:
+        if custom_transform is not None:
+            trans = custom_transform
+        elif agg_trans:
             trans = get_heavy_augment_transform()
+        else:
+            trans = train_transform
+
         train_set = datasets.CIFAR100(root=data_folder,
                                       download=True,
                                       train=True,
