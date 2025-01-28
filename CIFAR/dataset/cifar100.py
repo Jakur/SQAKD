@@ -46,12 +46,26 @@ def get_augment_transform(jitter_strength=0.5, gaussian_blur=False):
 def found_augment_transform():
     from torchvision.transforms import v2
     aug = v2.Compose([
-        v2.RandomAdjustSharpness(p=0.37674046326081456, sharpness_factor=0.473388021620039),
-        v2.ColorJitter(brightness=(0.7787606929447987, 1.2212393070552015), saturation=(0.14031598835343717, 1.859684011646563)),
-        v2.GaussianBlur(kernel_size=(3, 3), sigma=[0.1, 0.24801515642962435]),
-        v2.RandomAffine(degrees=[0.0, 0.0], translate=[0.05638597202397311, 0.05638597202397311], shear=[0.317924972803986, 0.317924972803986], fill=0),
-        v2.RandomAutocontrast(p=0.7480985007308912),
+    v2.ColorJitter(brightness=(0.4955052744829549, 1.504494725517045), saturation=(0.019858587004238704, 1.9801414129957613)),
+    v2.RandomInvert(p=0.05811370103932734),
+    v2.RandomEqualize(p=0.10200932855456979),
+    v2.RandomPosterize(p=0.9060121628537261, bits=5),
+    v2.RandomAffine(degrees=[0.0, 0.0], translate=[0.25175223663172586, 0.25175223663172586], shear=[0.4597930748859477, 0.4597930748859477])
     ])
+    # aug = v2.Compose([
+    # v2.RandomInvert(p=0.1217276231215455),
+    # v2.RandomAdjustSharpness(p=0.5129257814705915, sharpness_factor=0.2991414325015239),
+    # v2.RandomSolarize(p=0.2902056243045372, threshold=0.37053888043208205),
+    # v2.RandomAutocontrast(p=0.916472038114996),
+    # v2.ColorJitter(brightness=(0.10260029398324955, 1.8973997060167505), saturation=(0.02123074420087767, 1.9787692557991223))
+    # ])
+    # aug = v2.Compose([
+    #     v2.RandomAdjustSharpness(p=0.37674046326081456, sharpness_factor=0.473388021620039),
+    #     v2.ColorJitter(brightness=(0.7787606929447987, 1.2212393070552015), saturation=(0.14031598835343717, 1.859684011646563)),
+    #     v2.GaussianBlur(kernel_size=(3, 3), sigma=[0.1, 0.24801515642962435]),
+    #     v2.RandomAffine(degrees=[0.0, 0.0], translate=[0.05638597202397311, 0.05638597202397311], shear=[0.317924972803986, 0.317924972803986], fill=0),
+    #     v2.RandomAutocontrast(p=0.7480985007308912),
+    # ])
     return transforms.Compose([
         transforms.RandomCrop(32, padding=4), 
         transforms.RandomHorizontalFlip(),
@@ -264,10 +278,12 @@ def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=Fal
                     trans = get_heavy_augment_transform()
                 elif custom_transform == "trivial":
                     trans = get_trivial_transform()
+                elif custom_transform == "custom":
+                    trans = found_augment_transform()
                 else:
                     trans = train_transform
             else:
-                trans = custom_transform
+                trans = build_augmentation_transform(custom_transform)
         else:
             trans = get_heavy_augment_transform()
         train_set = CIFAR100Augment(num_transforms=num_transforms, 

@@ -34,6 +34,8 @@ elif [ $3 -eq 20 ]; then
     teacher="fp_cmi"
 elif [ $3 -eq 35 ]; then 
     teacher="fp_cmi3"
+elif [ $3 -eq 10 ]; then
+    teacher="fp_cmi4"
 else
     die "Unimplemented CMI: $3"
 fi
@@ -44,7 +46,7 @@ echo "Number of Transforms: $num_transforms"
 teacher_path="./results/CIFAR100_VGG13/${teacher}/checkpoint/last_checkpoint.pth"
 echo "Teacher Path: $teacher_path"
 
-METHOD_TYPE="t_alpha_${alpha}_trans_${num_transforms}_cmi_${cmi}"
+METHOD_TYPE="foo4_alpha_${alpha}_trans_${num_transforms}_cmi_${cmi}"
 echo "Method Type: $METHOD_TYPE"
 
 # Logic  
@@ -74,7 +76,7 @@ python3 train_quant.py --gpu_id '0' \
                     --teacher_path $teacher_path \
                     --seed 20240913 \
                     --num_transforms $num_transforms \
-                    --transform "trivial" \
+                    --transform "custom" \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
                     --kd_beta 0.0 \
