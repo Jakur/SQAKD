@@ -46,7 +46,7 @@ echo "Number of Transforms: $num_transforms"
 teacher_path="./results/CIFAR100_VGG13/${teacher}/checkpoint/last_checkpoint.pth"
 echo "Teacher Path: $teacher_path"
 
-METHOD_TYPE="foo4_alpha_${alpha}_trans_${num_transforms}_cmi_${cmi}"
+METHOD_TYPE="foo8_alpha_${alpha}_trans_${num_transforms}_cmi_${cmi}"
 echo "Method Type: $METHOD_TYPE"
 
 # Logic  

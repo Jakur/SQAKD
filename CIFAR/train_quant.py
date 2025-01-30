@@ -183,7 +183,12 @@ elif args.dataset == 'cifar100':
             # transform = build_from_seeds([x + args.seed] for x in [83, 278, 281, 79, 18])
             # transform = build_from_seeds([x + args.seed] for x in [6, 9, 38, 134, 80])
             # transform = build_from_seeds([x + args.seed] for x in [754, 988, 463, 978, 79])
-            transform = build_from_seeds([x + args.seed] for x in [734, 710])
+            # transform = build_from_seeds([x + args.seed] for x in [734, 710])
+            # transform = build_from_seeds([x + args.seed] for x in [391, 568, 692, 721, 270, 734, 918, 362, 903, 170])
+            # transform = build_from_seeds([x + args.seed] for x in [991, 532, 129, 892, 405, 111, 399, 465, 272, 616])
+            # transform = build_from_seeds([x + args.seed] for x in [550, 825, 352, 692, 157, 823, 215, 329, 773, 400])
+            transform = build_from_seeds([x + args.seed] for x in [444, 9, 187, 692, 136, 823, 157, 769, 664, 358, 400, 773, 329, 825])
+
             print(f"Custom Transform: {transform}")
         else:
             transform = args.transform

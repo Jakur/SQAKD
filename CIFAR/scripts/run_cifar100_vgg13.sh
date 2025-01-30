@@ -52,7 +52,7 @@ then
                     --lr_scheduler_m 'cosine' \
                     --epochs 720 \
                     --seed 20240913 \
-                    --teacher_path './results/CIFAR100_VGG13/fp2/checkpoint/last_checkpoint.pth'
+                    --teacher_path './results/CIFAR100_VGG13/fp_cmi3/checkpoint/last_checkpoint.pth'
 
 elif [ $METHOD_TYPE == "fp3/" ]
 then 
