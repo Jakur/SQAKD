@@ -10,6 +10,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import torch.nn as nn
+import torchvision.transforms.v2 as v2
 from safetensors.torch import save_file
 
 import utils
@@ -62,6 +63,8 @@ parser.add_argument('--use_cmi', type=str2bool, default=False, help="Track CMI")
 parser.add_argument('--cmi_weight', type=float, default=0.0, help="Contextual Mutual Information weight")
 parser.add_argument('--self_supervised', type=str2bool, default=False)
 parser.add_argument('--aggressive_transforms', type=str2bool, default=False, help="Aggressive transforms")
+parser.add_argument('--augment', type=str, choices=('custom', 'none'), default="none")
+parser.add_argument('--cutmix', type=str2bool, default=False, help="Enable Cutmix")
 
 
 # logging and misc
@@ -117,8 +120,14 @@ if args.dataset == 'cifar10':
 
 elif args.dataset == 'cifar100':
     args.num_classes = 100
-    train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False, 
-                                                           self_supervised=args.self_supervised, agg_trans=args.aggressive_transforms)
+    if args.augment == "custom":
+        from augment_search import build_from_seeds
+        transform = build_from_seeds([x + args.seed] for x in [101, 233, 287, 339, 462, 474, 187, 396, 494, 476])
+    else:
+        transform = None 
+
+    train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False,
+                                                           self_supervised=args.self_supervised, agg_trans=args.aggressive_transforms, custom_transform=transform)
 
 else:
     raise NotImplementedError
@@ -195,70 +204,9 @@ criterion = nn.CrossEntropyLoss()
 
 writer = SummaryWriter(args.log_dir)
 total_iter = 0
-# assert(False) # Dummy return
-if args.self_supervised:
-    best_acc = 0.0
-    for ep in range(args.epochs):
-        avg_train_loss = MeanMetric().to(device)
-        avg_variance_div = MeanMetric().to(device)
-        info_str = f"Starting self supervised epoch {ep}..."
 
-        print(info_str)
-        logging.info(info_str)
-        byol.train()
-        writer.add_scalar('train/model_lr', optimizer_m.param_groups[0]['lr'], ep)
-        for (img, _) in tqdm(train_loader):
-            img = img.to(device)
-
-            optimizer_m.zero_grad()
-
-            loss, variance_loss = byol(img)
-            avg_train_loss.update(loss)
-            avg_variance_div.update(variance_loss)
-            writer.add_scalar("train/self_super_loss", loss.item(), total_iter)
-            loss.backward()
-            optimizer_m.step()
-            byol.update_moving_average()
-            total_iter += 1
-        print(f"Average Train Loss: {avg_train_loss.compute().item()} / Average Variance: {avg_variance_div.compute().item()}")
-        logging.info(f"Average Train Loss: {avg_train_loss.compute().item()}")
-
-        scheduler_m.step()
-
-        with torch.no_grad():
-            if ep % 25 == 0 or ep == args.epochs - 1:
-                byol.eval()
-                model.classifier = nn.Identity()
-                test_acc = 100.0 * train_linear(model, train_loader, test_loader, device)
-                writer.add_scalar('test/acc', test_acc, ep)
-                print("Current epoch: {:03d}\t Test accuracy: {}%".format(ep, test_acc))
-                logging.info("Current epoch: {:03d}\t Test accuracy: {}%".format(ep, test_acc))
-                if test_acc > best_acc:
-                    best_acc = test_acc
-                    torch.save({
-                        'epoch':ep,
-                        'test_acc': test_acc,
-                        'model':model.state_dict(),
-                        'optimizer_m':optimizer_m.state_dict(),
-                        'scheduler_m':scheduler_m.state_dict(),
-                        'criterion':criterion.state_dict()
-                    }, os.path.join(args.log_dir,f'checkpoint/best_checkpoint.pth'))
-                if ep == args.epochs - 1:
-                    torch.save({
-                        'epoch':ep,
-                        'test_acc': test_acc,
-                        'model':model.state_dict(),
-                        'optimizer_m':optimizer_m.state_dict(),
-                        'scheduler_m':scheduler_m.state_dict(),
-                        'criterion':criterion.state_dict()
-                    }, os.path.join(args.log_dir,f'checkpoint/last_checkpoint.pth'))
-
-    exit("Done")
-    train_epochs = 50
-    optimizer_m = torch.optim.SGD(model.classifier.parameters(), lr=1e-2)
-    scheduler_m = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_m, T_max=train_epochs, eta_min=args.lr_m_end)
-else:
-    train_epochs = args.epochs
+train_epochs = args.epochs
+cutmix = v2.CutMix(num_classes=args.num_classes)
 
 ### train
 best_acc = 0
@@ -273,6 +221,8 @@ for ep in range(train_epochs):
     for i, (images, labels) in enumerate(train_loader):
         images = images.to(device)
         labels = labels.to(device)
+        if args.cutmix:
+            images, labels = cutmix(images, labels)
         
         optimizer_m.zero_grad()
             

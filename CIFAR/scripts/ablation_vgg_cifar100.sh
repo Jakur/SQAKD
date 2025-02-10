@@ -36,6 +36,10 @@ elif [ $3 -eq 35 ]; then
     teacher="fp_cmi3"
 elif [ $3 -eq 10 ]; then
     teacher="fp_cmi4"
+elif [ $3 -eq 99 ]; then
+    teacher="fp_retrain"
+elif [ $3 -eq 50 ]; then
+    teacher="fp_cutmix"
 else
     die "Unimplemented CMI: $3"
 fi
@@ -46,7 +50,7 @@ echo "Number of Transforms: $num_transforms"
 teacher_path="./results/CIFAR100_VGG13/${teacher}/checkpoint/last_checkpoint.pth"
 echo "Teacher Path: $teacher_path"
 
-METHOD_TYPE="foo8_alpha_${alpha}_trans_${num_transforms}_cmi_${cmi}"
+METHOD_TYPE="cm_${alpha}_trans_${num_transforms}_cmi_${cmi}"
 echo "Method Type: $METHOD_TYPE"
 
 # Logic  
@@ -76,9 +80,11 @@ python3 train_quant.py --gpu_id '0' \
                     --teacher_path $teacher_path \
                     --seed 20240913 \
                     --num_transforms $num_transforms \
-                    --transform "custom" \
+                    --transform "auto" \
+                    --cutmix True \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
+                    --decay_alpha False \
                     --kd_beta 0.0 \
 
 

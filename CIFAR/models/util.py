@@ -277,11 +277,13 @@ class Centroid(nn.Module):
         self.is_ready = False
         self.centroids = nn.Parameter(torch.zeros((num_classes, num_classes)), requires_grad=False)
         self.storage = nn.Parameter(torch.zeros((num_classes, num_classes)), requires_grad=False)
+        self.count = nn.Parameter(torch.zeros(num_classes, dtype=torch.long), requires_grad=False)
 
     def forward(self, logits: torch.tensor, targets: torch.tensor):
         # storage [num_classes, num_classes] AKA [target, average logits]
         with torch.no_grad():
             output = F.softmax(logits, 1)
+            self.count += torch.bincount(targets.flatten(), minlength=self.num_classes)
             if targets.dim() != output.dim():
                 targets = targets.expand((self.num_classes, -1)).T
             else:
@@ -293,8 +295,10 @@ class Centroid(nn.Module):
 
     def update_centroids(self):
         self.is_ready = True
-        self.centroids.copy_(self.storage / 500.0) # Todo track updates, do not hardcode this to CIFAR-100
+        divide = self.count.expand((self.num_classes, -1)).float().T
+        self.centroids.copy_(self.storage / divide) # Todo track updates, do not hardcode this to CIFAR-100
         self.storage.copy_(torch.zeros_like(self.storage))
+        self.count.copy_(torch.zeros_like(self.count))
 
     def get_centroids(self, target):
         return torch.index_select(self.centroids, 0, target)

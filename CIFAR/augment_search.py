@@ -23,6 +23,7 @@ from models.custom_models_vgg import *
 from dataset.cifar100 import get_cifar100_dataloaders, build_augmentation_transform, test_transform
 from models.util import Centroid
 from torchmetrics.aggregation import MeanMetric
+from torchmetrics.classification import ConfusionMatrix
 from tqdm.auto import tqdm
 from torchvision.transforms import v2
 from enum import Enum
@@ -328,27 +329,50 @@ def main():
 
     args.num_classes = 100 # Todo not hardcode
 
-    train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
+    model_class_t = globals().get(args.teacher_arch)
+    model_t = model_class_t(args)
+    model_t.to(device)
+    model_t = utils.load_teacher_model(model_t, args.teacher_path)
+    # model_t = model_t.eval()
+    model_t = model_t.train()
 
+    train_dataset, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
+    train_dataset2, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
+    end = model_t.classifier.weight.clone().detach()
+    end_b = model_t.classifier.bias.clone().detach()
 
+    def reset_model(model):
+        model.classifier.load_state_dict({"bias": end_b, "weight": end})
+        return model
 
+    def dfs_freeze(model):
+        for _, child in model.named_children():
+            for param in child.parameters():
+                param.requires_grad = False
+            dfs_freeze(child)
+
+    def unfreeze(layer):
+        for name, child in layer.named_modules():
+            for param in child.parameters():
+                param.requires_grad = True
 
     def get_loaders(augmentations): 
-        train_ds = Subset(train_dataset, indices=torch.arange(50000))
+        # indices = torch.arange(50000)
+        train_indices = torch.arange(0, 40000)
+        val_indices = torch.arange(40000, 50000)
+        train_ds = Subset(train_dataset, indices=train_indices)
+        val_ds = Subset(train_dataset2, indices=val_indices)
         train_ds.dataset.transform = augmentations
         train_loader = DataLoader(dataset=train_ds,
                                                 batch_size=args.batch_size,
                                                 shuffle=True,
                                                 num_workers=args.num_workers,
                                                 worker_init_fn=None if args.seed is None else _init_fn)
-        test_loader = DataLoader(dataset=test_dataset,
+        val_loader = DataLoader(dataset=val_ds,
                                                 batch_size=100,
                                                 shuffle=False,
                                                 num_workers=args.num_workers)
-        return train_loader, test_loader 
-
-    def clamp(x, low=0.0, high=1.0):
-        return max(min(x, high), low)
+        return train_loader, val_loader 
 
     os.environ["CUDA_VISIBLE_DEVICES"]= args.gpu_id
     device = torch.device(f"cuda:{args.gpu_id}")
@@ -371,31 +395,27 @@ def main():
         torch.manual_seed(seed)
         return
 
-    model_class_t = globals().get(args.teacher_arch)
-    model_t = model_class_t(args)
-    model_t.to(device)
-    model_t = utils.load_teacher_model(model_t, args.teacher_path)
-    model_t = model_t.eval()
-
-    def populate_cmi():
+    def populate_cmi(loader):
         cmi = Centroid().to(device)
-        train_loader, _ = get_loaders(test_transform) # First pass  
+        # train_loader, _ = get_loaders(test_transform) # First pass  
         with torch.no_grad():
-            for (img, labels) in train_loader:
+            for (img, labels) in loader:
                 img = img.to(device)
                 labels = labels.to(device)
                 pred = model_t(img)
                 cmi(pred, labels)
         cmi.update_centroids()
         return cmi 
-    
-    cmi = populate_cmi()
-
         
     criterion = nn.CrossEntropyLoss()
     best_score = -10000.0
 
     def do_iteration(i, best_score, do_print=True, use_augs=None, mask_wrong=False):
+        model_t.train()
+        reset_model(model_t)
+        dfs_freeze(model_t)
+        unfreeze(model_t.classifier)
+        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model_t.parameters()), lr=1e-2, amsgrad=True)
         out = {}
         if use_augs is None:
             augs = generate_augments(i + args.seed)
@@ -406,39 +426,62 @@ def main():
         else:
             augs = build_augmentation_transform(use_augs)
 
-        train_loader, _ = get_loaders(augs) 
+        train_loader, val_loader = get_loaders(augs) 
         avg_train_loss = MeanMetric().to(device)
+        avg_val_loss = MeanMetric().to(device)
+        val_correct_classified = 0
+        val_total = 0
         avg_cmi_loss = MeanMetric().to(device)
         avg_masked_cmi_loss = MeanMetric().to(device)
+        conf = ConfusionMatrix(task="multiclass", num_classes=100).to(device)
         total = 0
         correct_classified = 0
+        cmi = populate_cmi(train_loader)
+        for (img, labels) in train_loader:
+            optimizer.zero_grad()
+            img = img.to(device)
+            labels = labels.to(device)
+            pred = model_t(img)
+            _, predicted = torch.max(pred.data, 1)
+            # cmi(pred, labels)
+            assert(cmi.is_ready)
+            loss = criterion(pred, labels)
+            avg_train_loss.update(loss)
+            conf.update(pred, labels)
+            loss_cmi = cmi.get_loss(pred, labels)
+            loss_masked_cmi = cmi.get_loss(pred[predicted == labels], labels[predicted == labels])
+            # Experimental masking
+            avg_cmi_loss.update(loss_cmi)
+            avg_masked_cmi_loss.update(loss_masked_cmi)
+            correct_classified += (predicted == labels).sum().item()
+            # if total == 0:
+            #     # If less than 50% accuracy on first minibatch, break
+            #     if correct_classified < 0.5 * float(img.size()[0]):
+            #         out.update({"idx": i, "loss_score": -10000, "cmi_score": -10000, "score": -10000, "masked_cmi": -10000})
+            #         return out
+            total += pred.size(0)
+            loss.backward()
+            optimizer.step()
+        model_t.eval()
         with torch.no_grad():
-            for (img, labels) in train_loader:
+            for (img, labels) in val_loader:
                 img = img.to(device)
                 labels = labels.to(device)
                 pred = model_t(img)
                 _, predicted = torch.max(pred.data, 1)
-                # cmi(pred, labels)
-                assert(cmi.is_ready)
-                loss = criterion(pred, labels)
-                avg_train_loss.update(loss)
-                loss_cmi = cmi.get_loss(pred, labels)
-                loss_masked_cmi = cmi.get_loss(pred[predicted == labels], labels[predicted == labels])
-                # Experimental masking
-                avg_cmi_loss.update(loss_cmi)
-                avg_masked_cmi_loss.update(loss_masked_cmi)
-                correct_classified += (predicted == labels).sum().item()
-                if total == 0:
-                    # If less than 50% accuracy on first minibatch, break
-                    if correct_classified < 0.5 * float(img.size()[0]):
-                        out.update({"idx": i, "loss_score": -10000, "cmi_score": -10000, "score": -10000, "masked_cmi": -10000})
-                        return out
-                total += pred.size(0)
+                val_loss = criterion(pred, labels)
+                avg_val_loss.update(val_loss)
+                val_correct_classified += (predicted == labels).sum().item()
+                val_total += pred.size(0)
 
+
+        val_acc = val_correct_classified / val_total
+        val_loss_score = -1.0 * avg_val_loss.compute().item()
         acc = correct_classified / total
         loss_score = -1.0 * avg_train_loss.compute().item()
         cmi_score = -1.0 * avg_cmi_loss.compute().item() 
         masked_cmi_score = -1.0 * avg_masked_cmi_loss.compute().item() 
+        confusion = conf.compute().cpu().tolist()
         # score = 0.5 * loss_score + cmi_score
         score = loss_score + cmi_score
 
@@ -455,13 +498,14 @@ def main():
             print(f"Configuration #{i} did not pass")
 
         out.update({"idx": i, "loss_score": loss_score, "cmi_score": cmi_score, "score": score, 
-                    "acc": acc, "masked_cmi": masked_cmi_score})
+                    "acc": acc, "masked_cmi": masked_cmi_score, "confusion": confusion, "val_acc": val_acc, 
+                    "val_loss_score": val_loss_score})
         return out
 
     scores = []
     best_score = -100.0
 
-    for outer in range(0, 1000):
+    for outer in range(0, 500):
         temp = do_iteration(outer, best_score, do_print=True)
         if temp["score"] > best_score:
             best_score = temp["score"]
@@ -469,7 +513,7 @@ def main():
 
     scores.sort(key=lambda x: x["score"], reverse=True)
     import json
-    with open("augment_scores3.json", "w") as f:
+    with open("augment_scores_cm.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
 

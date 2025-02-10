@@ -3,7 +3,8 @@ from __future__ import print_function
 import os
 import socket
 import numpy as np
-from torch.utils.data import DataLoader
+import torch
+from torch.utils.data import DataLoader, Subset
 from PIL import Image
 import sys
 
@@ -238,6 +239,7 @@ class CIFAR100Augment(datasets.CIFAR100):
         # doing this so that it is consistent with all other datasets
         # to return a PIL Image
         base_img = Image.fromarray(img)
+        # imgs = [train_transform(base_img)]
         imgs = []
         if self.transform is not None:
             for _ in range(self.num_transform):
@@ -252,10 +254,24 @@ class CIFAR100Augment(datasets.CIFAR100):
         return imgs, target
 
 
-def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=False, is_augment=False, num_transforms=3, agg_trans=False, custom_transform=None):
+def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=False, is_augment=False, num_transforms=3, agg_trans=False, 
+                             custom_transform=None, size=50000):
     """
     cifar 100
     """
+    def get_custom(custom):
+        if isinstance(custom_transform, str):
+            if custom_transform == "auto":
+                trans = get_heavy_augment_transform()
+            elif custom_transform == "trivial":
+                trans = get_trivial_transform()
+            elif custom_transform == "custom":
+                trans = found_augment_transform()
+            else:
+                trans = train_transform
+        else:
+            trans = build_augmentation_transform(custom_transform)
+        return trans
     if self_supervised:
         train_set = datasets.CIFAR100(root=data_folder,
                                       download=True,
@@ -273,17 +289,7 @@ def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=Fal
                                      transform=train_transform)
     elif is_augment:
         if custom_transform is not None:
-            if isinstance(custom_transform, str):
-                if custom_transform == "auto":
-                    trans = get_heavy_augment_transform()
-                elif custom_transform == "trivial":
-                    trans = get_trivial_transform()
-                elif custom_transform == "custom":
-                    trans = found_augment_transform()
-                else:
-                    trans = train_transform
-            else:
-                trans = build_augmentation_transform(custom_transform)
+            trans = get_custom(custom_transform)
         else:
             trans = get_heavy_augment_transform()
         train_set = CIFAR100Augment(num_transforms=num_transforms, 
@@ -293,7 +299,7 @@ def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=Fal
                                      transform=trans)
     else:
         if custom_transform is not None:
-            trans = custom_transform
+            trans = get_custom(custom_transform)
         elif agg_trans:
             trans = get_heavy_augment_transform()
         else:
@@ -303,6 +309,9 @@ def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=Fal
                                       download=True,
                                       train=True,
                                       transform=trans)
+        
+    if size != 50000:
+        train_set = Subset(train_set, indices=torch.arange(0, size))
 
     test_set = datasets.CIFAR100(root=data_folder,
                                  download=True,

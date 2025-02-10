@@ -52,7 +52,7 @@ then
                     --lr_scheduler_m 'cosine' \
                     --epochs 720 \
                     --seed 20240913 \
-                    --teacher_path './results/CIFAR100_VGG13/fp_cmi3/checkpoint/last_checkpoint.pth'
+                    --teacher_path './results/CIFAR100_VGG13/fp_cutmix/checkpoint/last_checkpoint.pth'
 
 elif [ $METHOD_TYPE == "fp3/" ]
 then 
@@ -67,6 +67,53 @@ then
                     --epochs 720 \
                     --seed 20240913 \
                     --aggressive_transforms True \
+                    --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
+
+elif [ $METHOD_TYPE == "fp_subset/" ]
+then 
+    python3 train_fp.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'vgg13_bn_fp' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --seed 20240913 \
+                    --aggressive_transforms False \
+                    --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
+
+elif [ $METHOD_TYPE == "fp_cutmix/" ]
+then 
+    python3 train_fp.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'vgg13_bn_fp' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --seed 20240913 \
+                    --cutmix True \
+                    --aggressive_transforms False \
+                    --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
+
+elif [ $METHOD_TYPE == "fp_retrain2/" ]
+then 
+    python3 train_fp.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'vgg13_bn_fp' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --seed 20240913 \
+                    --aggressive_transforms False \
+                    --augment "custom" \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
 elif [ $METHOD_TYPE == "fp_cmi/" ]

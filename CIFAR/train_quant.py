@@ -7,6 +7,7 @@ import time
 import copy
 
 import torch
+import torchvision.transforms.v2 as v2
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.aggregation import MeanMetric
 import numpy as np
@@ -96,6 +97,7 @@ parser.add_argument('--teacher_arch', type=str)
 parser.add_argument('--kd_T', type=float, default=4, help='temperature for KD distillation')
 parser.add_argument('--kd_gamma', type=float, default=None, help='weight for classification')
 parser.add_argument('--kd_alpha', type=float, default=None, help='weight balance for KD')
+parser.add_argument('--decay_alpha', type=str2bool, default=False, help='Apply linear decay for alpha value')
 parser.add_argument('--kd_beta', type=float, default=None, help='weight balance for other losses or crd loss')
 parser.add_argument('--kd_theta', type=float, default=None, help='weight balance for crdSt losses')
 parser.add_argument('--all_layers', type=str2bool, default=False, help="Train all layers on CRD")
@@ -111,6 +113,7 @@ parser.add_argument('--head', default='linear', type=str, choices=['linear', 'ml
 parser.add_argument('--crd_no_labels', type=str2bool, default=False, help="Disable using label information for choosing negatives, as in SimCLR")
 parser.add_argument('--num_transforms', default=3, type=int, help="Number of transforms to use for SimSiam Distillation")
 parser.add_argument('--transform', type=str, default="auto", choices=["auto", "trivial", "custom", "none"], help="String value indicating transforms to use")
+parser.add_argument('--cutmix', type=str2bool, default=False, help="Enable Cutmix")
 
 # hint layer
 parser.add_argument('--hint_layer', default=2, type=int, choices=[0, 1, 2, 3, 4])
@@ -187,8 +190,13 @@ elif args.dataset == 'cifar100':
             # transform = build_from_seeds([x + args.seed] for x in [391, 568, 692, 721, 270, 734, 918, 362, 903, 170])
             # transform = build_from_seeds([x + args.seed] for x in [991, 532, 129, 892, 405, 111, 399, 465, 272, 616])
             # transform = build_from_seeds([x + args.seed] for x in [550, 825, 352, 692, 157, 823, 215, 329, 773, 400])
-            transform = build_from_seeds([x + args.seed] for x in [444, 9, 187, 692, 136, 823, 157, 769, 664, 358, 400, 773, 329, 825])
-
+            # transform = build_from_seeds([x + args.seed] for x in [444, 9, 187, 692, 136, 823, 157, 769, 664, 358, 400, 773, 329, 825])
+            # transform = build_from_seeds([x + args.seed] for x in [592, 651, 444, 446, 943, 400, 825])
+            # transform = build_from_seeds([x + args.seed] for x in [338, 94, 417, 56, 318, 359, 79]) # Best so far, sample different acc ranges
+            # transform = build_from_seeds([x + args.seed] for x in [338, 94, 390, 237, 230, 36, 393, 288, 249, 411])
+            # transform = build_from_seeds([x + args.seed] for x in [101, 233, 287, 339, 462, 474, 187, 396, 494, 476])
+            # transform = build_from_seeds([x + args.seed] for x in [652, 35, 527, 877, 698, 72])
+            transform = build_from_seeds([x + args.seed] for x in [204])
             print(f"Custom Transform: {transform}")
         else:
             transform = args.transform
@@ -304,7 +312,7 @@ if args.distill:
     model_t = model_class_t(args)
     model_t.to(device)
     baseline_cmi = None
-    cmi = Centroid().to(device)
+    # cmi = Centroid().to(device)
 
     model_t = utils.load_teacher_model(model_t, args.teacher_path)
 
@@ -370,6 +378,14 @@ acc_last5 = []
 iterations_per_epoch = len(train_loader)
 lambda_dict = {}
 print(f"iterations_per_epoch: {iterations_per_epoch}")
+cutmix = v2.CutMix(num_classes=args.num_classes)
+
+if args.decay_alpha:
+    alphas = np.linspace(args.kd_alpha, 0, num=args.epochs)
+    get_alpha = lambda x: alphas[x]
+else:
+    get_alpha = lambda _: args.kd_alpha
+
 for ep in range(args.epochs):
     if args.distill:
         # set modules as train()
@@ -403,7 +419,7 @@ for ep in range(args.epochs):
     if define_quantizer_scheduler:
         writer.add_scalar('train/quant_lr', optimizer_q.param_groups[0]['lr'], ep)
     
-    mean_cmi = MeanMetric().to(device)
+    # mean_cmi = MeanMetric().to(device)
 
     for i, data in enumerate(train_loader):
         if args.distill == "crd" or args.distill == "crdst":
@@ -419,6 +435,15 @@ for ep in range(args.epochs):
         else:
             images = images.to(device)
         labels = labels.to(device)
+        if args.cutmix:
+            cutmix_images, labels = cutmix(images, labels) # Theoretically bugged on views != 1, but works well (?)
+        
+        # print((cutmix_images[0] - images[0]).square().sum())
+        # print((cutmix_images[1] - images[1]).square().sum())
+        # print(images[0].size())
+        # print(labels.size())
+        # print(labels[0])
+        # assert(False)
         
         optimizer_m.zero_grad()
         if define_quantizer_scheduler:
@@ -491,23 +516,23 @@ for ep in range(args.epochs):
                 for _ in range(len(images)):
                     all_labels.append(labels)
                 labels = torch.cat(all_labels)
+            # bs = labels.size()[0]
+            # loss_cls = criterion_cls(logit_s[0:bs], labels)
             loss_cls = criterion_cls(logit_s, labels)
             loss_div = criterion_div(logit_s, logit_t)
-            with torch.no_grad():
-                cmi(logit_t, labels) # Update for next epoch
-                loss_cmi = cmi.get_loss(logit_t, labels) # Do not use this as a loss term, just for analysis
-                mean_cmi.update(loss_cmi)
+
             if args.distill == "crdst":
+                alpha = get_alpha(ep)
                 loss_kd_crd, loss_kd_crdSt = utils_distill.get_loss_crdst(args, feat_s, feat_t, criterion_kd, index, contrast_idx, block_out_s, block_out_t)
-                loss_total = args.kd_gamma * loss_cls + args.kd_alpha * loss_div + + args.kd_beta * loss_kd_crd + args.kd_theta * loss_kd_crdSt 
+                loss_total = args.kd_gamma * loss_cls + alpha * loss_div + + args.kd_beta * loss_kd_crd + args.kd_theta * loss_kd_crdSt 
             else:
                 # Short circuit
                 if args.kd_beta != 0.0:
                     loss_kd = utils_distill.get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast_idx)
                 else:
                     loss_kd = 0.0
-                
-                loss_total = args.kd_gamma * loss_cls + args.kd_alpha * loss_div + args.kd_beta * loss_kd 
+                alpha = get_alpha(ep)
+                loss_total = args.kd_gamma * loss_cls + alpha * loss_div + args.kd_beta * loss_kd 
                 
                 # track loss
                 loss_cls_value = loss_cls.item()
@@ -515,6 +540,8 @@ for ep in range(args.epochs):
                 loss_total_value = loss_total.item()
                 writer.add_scalar('train/loss_cls', loss_cls_value, total_iter)
                 writer.add_scalar('train/loss_div', loss_div_value, total_iter)
+                if args.kd_beta != 0.0:
+                    writer.add_scalar('train/loss_beta', loss_kd, total_iter)
                 content = f"total_iter={total_iter}, loss_cls={loss_cls_value}, loss_div={loss_div_value}, loss_total={loss_total_value}"
                 with open(os.path.join(args.log_dir,'loss.txt'), "a") as w:
                     w.write(f"{content}\n")
@@ -534,8 +561,8 @@ for ep in range(args.epochs):
         writer.add_scalar('train/loss', loss.item(), total_iter)
         total_iter += 1
 
-    distill_cmi = mean_cmi.compute().item()
-    writer.add_scalar("distill_cmi", distill_cmi, ep)
+    # distill_cmi = mean_cmi.compute().item()
+    # writer.add_scalar("distill_cmi", distill_cmi, ep)
 
     scheduler_m.step()
     if define_quantizer_scheduler:
@@ -579,7 +606,7 @@ for ep in range(args.epochs):
             correct_classified += (predicted == labels).sum().item()
         test_acc = correct_classified/total*100
         print("Current epoch: {:03d}".format(ep), "\t Test accuracy:", test_acc, "%")
-        logging.info("Current epoch: {:03d}\t Test accuracy: {}% Distill CMI: {:.4f}".format(ep, test_acc, distill_cmi))
+        # logging.info("Current epoch: {:03d}\t Test accuracy: {}% Distill CMI: {:.4f}".format(ep, test_acc, distill_cmi))
         writer.add_scalar('test/acc', test_acc, ep)
 
         torch.save({
@@ -608,7 +635,7 @@ for ep in range(args.epochs):
         # for record the average acccuracy of the last 5 epochs
         if ep >= args.epochs - 5:
             acc_last5.append(test_acc)
-    cmi.update_centroids()
+    # cmi.update_centroids()
     layer_num = 0
     for m in model.modules():
         if isinstance(m, QConv):
