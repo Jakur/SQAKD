@@ -5,6 +5,7 @@ import random
 import sys
 import time
 import math
+import json
 from torch.utils.data import DataLoader, Subset, Dataset
 from dataclasses import dataclass
 import torchvision
@@ -279,7 +280,7 @@ def main():
     parser.add_argument('--num_classes', type=int, default=10, help='number of classes')
 
     # training settings
-    parser.add_argument('--batch_size', type=int, default=256, help='mini-batch size for training')
+    parser.add_argument('--batch_size', type=int, default=100, help='mini-batch size for training')
     parser.add_argument('--epochs', type=int, default=400, help='number of epochs for training')
     parser.add_argument('--optimizer_m', type=str, default='SGD', choices=('SGD','Adam'), help='optimizer for model paramters')
     parser.add_argument('--lr_m', type=float, default=1e-1, help='learning rate for model parameters')
@@ -333,8 +334,8 @@ def main():
     model_t = model_class_t(args)
     model_t.to(device)
     model_t = utils.load_teacher_model(model_t, args.teacher_path)
-    # model_t = model_t.eval()
-    model_t = model_t.train()
+    model_t = model_t.eval()
+    # model_t = model_t.train()
 
     train_dataset, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
     train_dataset2, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
@@ -356,20 +357,20 @@ def main():
             for param in child.parameters():
                 param.requires_grad = True
 
-    def get_loaders(augmentations): 
-        # indices = torch.arange(50000)
-        train_indices = torch.arange(0, 40000)
-        val_indices = torch.arange(40000, 50000)
-        train_ds = Subset(train_dataset, indices=train_indices)
-        val_ds = Subset(train_dataset2, indices=val_indices)
+    def get_loaders(augmentations, seed_offset=0): 
+        indices = torch.arange(50000)
+        _init_fn(seed_offset)
+        # train_indices = torch.arange(0, 40000)
+        # val_indices = torch.arange(40000, 50000)
+        train_ds = Subset(train_dataset, indices=indices)
+        val_ds = Subset(train_dataset2, indices=indices)
         train_ds.dataset.transform = augmentations
         train_loader = DataLoader(dataset=train_ds,
                                                 batch_size=args.batch_size,
-                                                shuffle=True,
-                                                num_workers=args.num_workers,
-                                                worker_init_fn=None if args.seed is None else _init_fn)
+                                                shuffle=False,
+                                                num_workers=args.num_workers)
         val_loader = DataLoader(dataset=val_ds,
-                                                batch_size=100,
+                                                batch_size=args.batch_size,
                                                 shuffle=False,
                                                 num_workers=args.num_workers)
         return train_loader, val_loader 
@@ -408,14 +409,37 @@ def main():
         return cmi 
         
     criterion = nn.CrossEntropyLoss()
+    entropy_no_reduce = nn.CrossEntropyLoss(reduction="none")
+    kl_div = nn.KLDivLoss(reduction="batchmean", log_target=True)
+    log_soft = nn.LogSoftmax(dim=1)
+    cosine_sim = nn.CosineSimilarity(dim=1)
     best_score = -10000.0
 
+    # _, val_loader = get_loaders([]) 
+
+    # vanilla_logits = []
+    # model_t.eval()
+    # avg = MeanMetric().to(device)
+    # soft = nn.Softmax(dim=1)
+    # with torch.no_grad():
+    #     for (img, labels) in val_loader:
+    #         img = img.to(device)
+    #         labels = labels.to(device)
+    #         pred = model_t(img)
+    #         loss = criterion(pred, labels)
+    #         avg.update(loss)
+    #         vanilla_logits.append(soft(pred).cpu())
+    
+    # print(f"Average Baseline: {avg.compute().item()}")
+    # assert(False)
+    # vanilla_logits = torch.cat(vanilla_logits, dim=0)
+
     def do_iteration(i, best_score, do_print=True, use_augs=None, mask_wrong=False):
-        model_t.train()
-        reset_model(model_t)
-        dfs_freeze(model_t)
-        unfreeze(model_t.classifier)
-        optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model_t.parameters()), lr=1e-2, amsgrad=True)
+        # model_t.train()
+        # reset_model(model_t)
+        # dfs_freeze(model_t)
+        # unfreeze(model_t.classifier)
+        # optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model_t.parameters()), lr=1e-2, amsgrad=True)
         out = {}
         if use_augs is None:
             augs = generate_augments(i + args.seed)
@@ -426,60 +450,51 @@ def main():
         else:
             augs = build_augmentation_transform(use_augs)
 
-        train_loader, val_loader = get_loaders(augs) 
+        train_loader, _ = get_loaders(augs) 
+        train_loader2, _ = get_loaders(augs, seed_offset=1)
         avg_train_loss = MeanMetric().to(device)
-        avg_val_loss = MeanMetric().to(device)
-        val_correct_classified = 0
-        val_total = 0
+        avg_min_loss = MeanMetric().to(device)
         avg_cmi_loss = MeanMetric().to(device)
         avg_masked_cmi_loss = MeanMetric().to(device)
+        avg_aug_diff = MeanMetric().to(device)
         conf = ConfusionMatrix(task="multiclass", num_classes=100).to(device)
         total = 0
         correct_classified = 0
         cmi = populate_cmi(train_loader)
-        for (img, labels) in train_loader:
-            optimizer.zero_grad()
-            img = img.to(device)
-            labels = labels.to(device)
-            pred = model_t(img)
-            _, predicted = torch.max(pred.data, 1)
-            # cmi(pred, labels)
-            assert(cmi.is_ready)
-            loss = criterion(pred, labels)
-            avg_train_loss.update(loss)
-            conf.update(pred, labels)
-            loss_cmi = cmi.get_loss(pred, labels)
-            loss_masked_cmi = cmi.get_loss(pred[predicted == labels], labels[predicted == labels])
-            # Experimental masking
-            avg_cmi_loss.update(loss_cmi)
-            avg_masked_cmi_loss.update(loss_masked_cmi)
-            correct_classified += (predicted == labels).sum().item()
-            # if total == 0:
-            #     # If less than 50% accuracy on first minibatch, break
-            #     if correct_classified < 0.5 * float(img.size()[0]):
-            #         out.update({"idx": i, "loss_score": -10000, "cmi_score": -10000, "score": -10000, "masked_cmi": -10000})
-            #         return out
-            total += pred.size(0)
-            loss.backward()
-            optimizer.step()
-        model_t.eval()
         with torch.no_grad():
-            for (img, labels) in val_loader:
+            for ((img, labels), (img2, _)) in zip(train_loader, train_loader2):
                 img = img.to(device)
+                img2 = img2.to(device)
                 labels = labels.to(device)
                 pred = model_t(img)
+                pred2 = model_t(img2)
                 _, predicted = torch.max(pred.data, 1)
-                val_loss = criterion(pred, labels)
-                avg_val_loss.update(val_loss)
-                val_correct_classified += (predicted == labels).sum().item()
-                val_total += pred.size(0)
+                # cmi(pred, labels)
+                assert(cmi.is_ready)
+                ent = entropy_no_reduce(pred, labels)
+                ent2 = entropy_no_reduce(pred2, labels)
+                min_loss = torch.minimum(ent, ent2).mean()
+                loss = criterion(pred, labels)
+                loss2 = criterion(pred2, labels)
+                aug_loss = kl_div(log_soft(pred), log_soft(pred2))
+                avg_train_loss.update(loss)
+                avg_train_loss.update(loss2)
+                avg_min_loss.update(min_loss)
+                avg_aug_diff.update(aug_loss)
+                conf.update(pred, labels)
+                loss_cmi = cmi.get_loss(pred, labels)
+                loss_masked_cmi = cmi.get_loss(pred[predicted == labels], labels[predicted == labels])
+                # Experimental masking
+                avg_cmi_loss.update(loss_cmi)
+                avg_masked_cmi_loss.update(loss_masked_cmi)
+                correct_classified += (predicted == labels).sum().item()
+                total += pred.size(0)
 
-
-        val_acc = val_correct_classified / val_total
-        val_loss_score = -1.0 * avg_val_loss.compute().item()
         acc = correct_classified / total
         loss_score = -1.0 * avg_train_loss.compute().item()
+        min_loss_score = -1.0 * avg_min_loss.compute().item()
         cmi_score = -1.0 * avg_cmi_loss.compute().item() 
+        aug_diff_score = -1.0 * avg_aug_diff.compute().item()
         masked_cmi_score = -1.0 * avg_masked_cmi_loss.compute().item() 
         confusion = conf.compute().cpu().tolist()
         # score = 0.5 * loss_score + cmi_score
@@ -498,24 +513,22 @@ def main():
             print(f"Configuration #{i} did not pass")
 
         out.update({"idx": i, "loss_score": loss_score, "cmi_score": cmi_score, "score": score, 
-                    "acc": acc, "masked_cmi": masked_cmi_score, "confusion": confusion, "val_acc": val_acc, 
-                    "val_loss_score": val_loss_score})
+                    "acc": acc, "masked_cmi": masked_cmi_score, "confusion": confusion, "aug_logits": aug_diff_score, "min_loss": min_loss_score})
         return out
 
     scores = []
     best_score = -100.0
 
-    for outer in range(0, 500):
-        temp = do_iteration(outer, best_score, do_print=True)
-        if temp["score"] > best_score:
-            best_score = temp["score"]
-        scores.append(temp)
+    # for outer in range(0, 500):
+    #     temp = do_iteration(outer, best_score, do_print=True)
+    #     if temp["score"] > best_score:
+    #         best_score = temp["score"]
+    #     scores.append(temp)
 
-    scores.sort(key=lambda x: x["score"], reverse=True)
-    import json
-    with open("augment_scores_cm.json", "w") as f:
-        # Dump the data into the file
-        json.dump(scores, f)
+    # scores.sort(key=lambda x: x["score"], reverse=True)
+    # with open("augment_scores_cm3.json", "w") as f:
+    #     # Dump the data into the file
+    #     json.dump(scores, f)
 
 
     # good = []
@@ -531,9 +544,15 @@ def main():
 
     # good = v2.RandomChoice(good)
 
-    good = TAW()
+    good = v2.AutoAugment(policy=v2.AutoAugmentPolicy.CIFAR10)
 
-    do_iteration(0, -10000, use_augs=[good])
+    # good = TAW()
+
+    temp = do_iteration(0, -10000, use_augs=[good], do_print=True)
+    scores = [temp]
+    with open("temp.json", "w") as f:
+        # Dump the data into the file
+        json.dump(scores, f)
 
 if __name__ == "__main__":
     main()
