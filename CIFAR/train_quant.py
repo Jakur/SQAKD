@@ -112,7 +112,9 @@ parser.add_argument('--nce_m', default=0.5, type=float, help='momentum for non-p
 parser.add_argument('--head', default='linear', type=str, choices=['linear', 'mlp', 'pad'])
 parser.add_argument('--crd_no_labels', type=str2bool, default=False, help="Disable using label information for choosing negatives, as in SimCLR")
 parser.add_argument('--num_transforms', default=3, type=int, help="Number of transforms to use for SimSiam Distillation")
-parser.add_argument('--transform', type=str, default="auto", choices=["auto", "trivial", "custom", "none"], help="String value indicating transforms to use")
+parser.add_argument('--transform', type=str, default="auto", choices=["auto", "trivial", "custom", "augmix", 
+                                                                      "rand", "erasing", "autoimg", "autosvhn", "none"], 
+                                                                      help="String value indicating transforms to use")
 parser.add_argument('--cutmix', type=str2bool, default=False, help="Enable Cutmix")
 
 # hint layer
@@ -143,9 +145,8 @@ logging.info(log_string+'\n')
 print('')
 
 ### GPU setting
-# os.environ["CUDA_VISIBLE_DEVICES"]= args.gpu_id
-foo = torch.ones(10).cuda()
-device = torch.device(foo.device)
+os.environ["CUDA_VISIBLE_DEVICES"]= args.gpu_id
+device = torch.device(f"cuda:{args.gpu_id}")
 # device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 ### set the seed number
@@ -196,7 +197,8 @@ elif args.dataset == 'cifar100':
             # transform = build_from_seeds([x + args.seed] for x in [338, 94, 390, 237, 230, 36, 393, 288, 249, 411])
             # transform = build_from_seeds([x + args.seed] for x in [101, 233, 287, 339, 462, 474, 187, 396, 494, 476])
             # transform = build_from_seeds([x + args.seed] for x in [652, 35, 527, 877, 698, 72])
-            transform = build_from_seeds([x + args.seed] for x in [204])
+            # 39
+            transform = build_from_seeds([x + args.seed] for x in [8, 14, 16, 223, 315, 441, 460, 464, 486, 496])
             print(f"Custom Transform: {transform}")
         else:
             transform = args.transform
@@ -409,6 +411,10 @@ for ep in range(args.epochs):
     else:
         model.train()
 
+    avg_loss_cls = MeanMetric().to(device)
+    avg_loss_div = MeanMetric().to(device)
+    avg_loss_total = MeanMetric().to(device)
+
 
     ### update grad scales
     if ep % args.update_every == 0 and ep != 0 and not args.baseline and args.use_hessian:
@@ -538,13 +544,13 @@ for ep in range(args.epochs):
                 loss_cls_value = loss_cls.item()
                 loss_div_value = loss_div.item()
                 loss_total_value = loss_total.item()
+                avg_loss_cls.update(loss_cls_value)
+                avg_loss_div.update(loss_div_value)
+                avg_loss_total.update(loss_total_value)
                 writer.add_scalar('train/loss_cls', loss_cls_value, total_iter)
                 writer.add_scalar('train/loss_div', loss_div_value, total_iter)
                 if args.kd_beta != 0.0:
                     writer.add_scalar('train/loss_beta', loss_kd, total_iter)
-                content = f"total_iter={total_iter}, loss_cls={loss_cls_value}, loss_div={loss_div_value}, loss_total={loss_total_value}"
-                with open(os.path.join(args.log_dir,'loss.txt'), "a") as w:
-                    w.write(f"{content}\n")
             if i == 0:
                 printRed(f"gamma: {args.kd_gamma}, alpha: {args.kd_alpha}, kd_beta: {args.kd_beta}, kd_theta: {args.kd_theta}")
                 
@@ -631,6 +637,10 @@ for ep in range(args.epochs):
                 'scheduler_q':scheduler_q.state_dict() if define_quantizer_scheduler else {},
                 'criterion':criterion.state_dict()
             }, os.path.join(args.log_dir,'checkpoint/best_checkpoint.pth'))
+
+        content = f"ep={ep}, test_acc={test_acc}, loss_cls={avg_loss_cls.compute()}, loss_div={avg_loss_div.compute()}, loss_total={avg_loss_total.compute()}"
+        with open(os.path.join(args.log_dir,'loss.txt'), "a") as w:
+            w.write(f"{content}\n")
 
         # for record the average acccuracy of the last 5 epochs
         if ep >= args.epochs - 5:

@@ -48,6 +48,365 @@ then
                     --cmi_weight 0.0 \
                     --log_dir '../results/CIFAR100_ResNet32/'$METHOD_TYPE
 
+elif [ $METHOD_TYPE == "fp_cutmix/" ]
+then 
+    python3 train_fp.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_fp' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --seed 20240913 \
+                    --cutmix True \
+                    --aggressive_transforms False \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE
+
+elif [ $METHOD_TYPE == "siam_t_no/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 4 \
+                    --act_levels 4 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 1 \
+                    --transform "trivial" \
+                    --cutmix False \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "siam_aa_no/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 4 \
+                    --act_levels 4 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 1 \
+                    --transform "auto" \
+                    --cutmix False \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "w4a4_siam_none/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 16 \
+                    --act_levels 16 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 1 \
+                    --transform "none" \
+                    --cutmix False \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "w3a3_siam_aaimg/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 8 \
+                    --act_levels 8 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 1 \
+                    --transform "autoimg" \
+                    --cutmix True \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "w3a3_siam_t_no/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 8 \
+                    --act_levels 8 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 1 \
+                    --transform "trivial" \
+                    --cutmix False \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+
+elif [ $METHOD_TYPE == "w3a3_siam_erasing_no/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 8 \
+                    --act_levels 8 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 1 \
+                    --transform "erasing" \
+                    --cutmix False \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "siam_erasing_no/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 4 \
+                    --act_levels 4 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 1 \
+                    --transform "erasing" \
+                    --cutmix False \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+
+elif [ $METHOD_TYPE == "siam_rand_no/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 4 \
+                    --act_levels 4 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 1 \
+                    --transform "rand" \
+                    --cutmix False \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "siam_none_no2/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 4 \
+                    --act_levels 4 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20250215 \
+                    --num_transforms 2 \
+                    --transform "none" \
+                    --cutmix False \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+elif [ $METHOD_TYPE == "siam2/" ]
+then
+    python3 train_quant.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_quant' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --weight_decay 5e-4 \
+                    --optimizer_m 'Adam' \
+                    --optimizer_q 'Adam' \
+                    --lr_m 5e-4 \
+                    --lr_q 5e-6 \
+                    --lr_scheduler_m 'cosine' \
+                    --lr_scheduler_q 'cosine' \
+                    --epochs 200 \
+                    --weight_levels 4 \
+                    --act_levels 4 \
+                    --baseline False \
+                    --use_hessian True \
+                    --load_pretrain True \
+                    --pretrain_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                    --distill 'siam' \
+                    --teacher_arch 'resnet32_fp' \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --seed 20240913 \
+                    --num_transforms 2 \
+                    --transform "auto" \
+                    --cutmix True \
+                    --kd_gamma 1.0 \
+                    --kd_alpha 2.0 \
+                    --decay_alpha False \
+                    --kd_beta 0.0 \
+
+
 elif [ $METHOD_TYPE == "fp_cmi/" ] 
 then
     python3 train_fp.py --gpu_id '0' \

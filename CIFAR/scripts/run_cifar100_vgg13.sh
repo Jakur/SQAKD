@@ -46,13 +46,28 @@ then
                     --dataset 'cifar100' \
                     --teacher_arch 'vgg13_bn_fp' \
                     --num_workers 8 \
-                    --batch_size 64 \
+                    --batch_size 100 \
                     --lr_m 0.05 \
                     --weight_decay 5e-4 \
                     --lr_scheduler_m 'cosine' \
                     --epochs 720 \
                     --seed 20240913 \
                     --teacher_path './results/CIFAR100_VGG13/fp_cutmix/checkpoint/last_checkpoint.pth'
+
+
+elif [ $METHOD_TYPE == "augment_resnet/" ]
+then
+    python3 augment_search.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --teacher_arch 'resnet32_fp' \
+                    --num_workers 8 \
+                    --batch_size 100 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --seed 20240913 \
+                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth'
 
 elif [ $METHOD_TYPE == "fp3/" ]
 then 

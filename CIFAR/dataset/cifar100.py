@@ -9,6 +9,7 @@ from PIL import Image
 import sys
 
 from torchvision import datasets, transforms
+from torchvision.transforms import v2
 
 """
 100 classes
@@ -94,15 +95,38 @@ def get_heavy_augment_transform():
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ])
 
-def get_trivial_transform():
-    trivial = transforms.TrivialAugmentWide()
+def get_general_transform(trans):
     return transforms.Compose([
         transforms.RandomCrop(32, padding=4), 
         transforms.RandomHorizontalFlip(),
-        trivial,
+        trans,
         transforms.ToTensor(),
         transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
     ])
+
+def get_augmix_transform():
+    auto = v2.AugMix()
+    return get_general_transform(auto)
+
+def get_trivial_transform():
+    trivial = transforms.TrivialAugmentWide()
+    return get_general_transform(trivial)
+
+def get_rand_transform():
+    rand = v2.RandAugment()
+    return get_general_transform(rand)
+
+def get_erasing_transform():
+    erasing = v2.RandomErasing()
+    return get_general_transform(erasing)
+
+def get_imagenet_aa_transform():
+    aa = v2.AutoAugment(v2.AutoAugmentPolicy.IMAGENET)
+    return get_general_transform(aa)
+
+def get_svhn_aa_transform():
+    aa = v2.AutoAugment(v2.AutoAugmentPolicy.SVHN)
+    return get_general_transform(aa)
 
 
 train_transform = transforms.Compose([
@@ -260,15 +284,27 @@ def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=Fal
     cifar 100
     """
     def get_custom(custom):
-        if isinstance(custom_transform, str):
-            if custom_transform == "auto":
+        if isinstance(custom, str):
+            if custom == "auto":
                 trans = get_heavy_augment_transform()
-            elif custom_transform == "trivial":
+            elif custom == "trivial":
                 trans = get_trivial_transform()
-            elif custom_transform == "custom":
+            elif custom == "custom":
                 trans = found_augment_transform()
-            else:
+            elif custom == "augmix":
+                trans = get_augmix_transform()
+            elif custom == "rand":
+                trans = get_rand_transform()
+            elif custom == "erasing":
+                trans = get_erasing_transform()
+            elif custom == "autoimg":
+                trans = get_imagenet_aa_transform()
+            elif custom == "autosvhn":
+                trans = get_svhn_aa_transform()
+            elif custom == "none":
                 trans = train_transform
+            else:
+                return NotImplementedError
         else:
             trans = build_augmentation_transform(custom_transform)
         return trans

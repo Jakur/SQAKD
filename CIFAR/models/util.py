@@ -277,26 +277,31 @@ class Centroid(nn.Module):
         self.is_ready = False
         self.centroids = nn.Parameter(torch.zeros((num_classes, num_classes)), requires_grad=False)
         self.storage = nn.Parameter(torch.zeros((num_classes, num_classes)), requires_grad=False)
-        self.count = nn.Parameter(torch.zeros(num_classes, dtype=torch.long), requires_grad=False)
+        self.count = nn.Parameter(torch.zeros(num_classes, dtype=torch.float), requires_grad=False)
 
     def forward(self, logits: torch.tensor, targets: torch.tensor):
         # storage [num_classes, num_classes] AKA [target, average logits]
         with torch.no_grad():
             output = F.softmax(logits, 1)
-            self.count += torch.bincount(targets.flatten(), minlength=self.num_classes)
-            if targets.dim() != output.dim():
-                targets = targets.expand((self.num_classes, -1)).T
+            if targets.ndim == 1:
+                self.count += torch.bincount(targets.flatten(), minlength=self.num_classes).float()
+                if targets.dim() != output.dim():
+                    targets = targets.expand((self.num_classes, -1)).T
+                else:
+                    raise NotImplementedError
+                out = torch.zeros_like(self.storage).to(logits.device)
+                out.scatter_reduce_(0, targets, output, "sum")
+                self.storage += out
             else:
-                raise NotImplementedError
-            out = torch.zeros_like(self.storage).to(logits.device)
-            out.scatter_reduce_(0, targets, output, "sum")
-            self.storage += out
+                self.count += targets.sum(dim=0)
+                centroids = torch.einsum("bi,bj->ij", output, targets)
+                self.storage += centroids
         
 
     def update_centroids(self):
         self.is_ready = True
-        divide = self.count.expand((self.num_classes, -1)).float().T
-        self.centroids.copy_(self.storage / divide) # Todo track updates, do not hardcode this to CIFAR-100
+        divide = self.count.expand((self.num_classes, -1)).T
+        self.centroids.copy_(self.storage / divide)
         self.storage.copy_(torch.zeros_like(self.storage))
         self.count.copy_(torch.zeros_like(self.count))
 
@@ -305,7 +310,10 @@ class Centroid(nn.Module):
 
     def get_loss(self, logits: torch.tensor, targets: torch.tensor):
         if self.is_ready:
-            centroids = self.get_centroids(targets)
+            if targets.ndim > 1: 
+                centroids = torch.einsum("bi,ij->bj", targets, self.centroids)
+            else:
+                centroids = self.get_centroids(targets)
             surrogate_loss = -1.0 * F.kl_div(centroids.log(), F.log_softmax(logits, 1), reduction="batchmean", log_target=True)
             return surrogate_loss
         else:

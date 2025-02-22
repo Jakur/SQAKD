@@ -339,8 +339,8 @@ def main():
 
     train_dataset, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
     train_dataset2, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
-    end = model_t.classifier.weight.clone().detach()
-    end_b = model_t.classifier.bias.clone().detach()
+    # end = model_t.classifier.weight.clone().detach()
+    # end_b = model_t.classifier.bias.clone().detach()
 
     def reset_model(model):
         model.classifier.load_state_dict({"bias": end_b, "weight": end})
@@ -396,13 +396,16 @@ def main():
         torch.manual_seed(seed)
         return
 
-    def populate_cmi(loader):
+    def populate_cmi(loader, use_cutmix=False):
         cmi = Centroid().to(device)
+        cutmix = v2.CutMix(num_classes=args.num_classes)
         # train_loader, _ = get_loaders(test_transform) # First pass  
         with torch.no_grad():
             for (img, labels) in loader:
                 img = img.to(device)
                 labels = labels.to(device)
+                if use_cutmix:
+                    img, labels = cutmix(img, labels)
                 pred = model_t(img)
                 cmi(pred, labels)
         cmi.update_centroids()
@@ -410,10 +413,11 @@ def main():
         
     criterion = nn.CrossEntropyLoss()
     entropy_no_reduce = nn.CrossEntropyLoss(reduction="none")
-    kl_div = nn.KLDivLoss(reduction="batchmean", log_target=True)
+    kl_div = nn.KLDivLoss(reduction="batchmean", log_target=False)
     log_soft = nn.LogSoftmax(dim=1)
     cosine_sim = nn.CosineSimilarity(dim=1)
     best_score = -10000.0
+    pool = nn.AdaptiveMaxPool2d((1, 1))
 
     # _, val_loader = get_loaders([]) 
 
@@ -434,7 +438,7 @@ def main():
     # assert(False)
     # vanilla_logits = torch.cat(vanilla_logits, dim=0)
 
-    def do_iteration(i, best_score, do_print=True, use_augs=None, mask_wrong=False):
+    def do_iteration(i, best_score, do_print=True, use_augs=None, mask_wrong=False, use_cutmix=False, name=""):
         # model_t.train()
         # reset_model(model_t)
         # dfs_freeze(model_t)
@@ -448,45 +452,80 @@ def main():
             augs = build_augmentation_transform(augs)
             # augs = build_augmentation_transform([TAW()])
         else:
+            out["t1"] = name
+            if use_cutmix:
+                out["t2"] = "CutMix"
+            else:
+                out["t2"] = "None"
             augs = build_augmentation_transform(use_augs)
 
         train_loader, _ = get_loaders(augs) 
-        train_loader2, _ = get_loaders(augs, seed_offset=1)
+        # train_loader2, _ = get_loaders(augs, seed_offset=1)
         avg_train_loss = MeanMetric().to(device)
         avg_min_loss = MeanMetric().to(device)
         avg_cmi_loss = MeanMetric().to(device)
         avg_masked_cmi_loss = MeanMetric().to(device)
-        avg_aug_diff = MeanMetric().to(device)
-        conf = ConfusionMatrix(task="multiclass", num_classes=100).to(device)
+        avg_vec_sim = MeanMetric().to(device)
+        avg_logit_sim = MeanMetric().to(device)
+        avg_entropy = MeanMetric().to(device)
+        # conf = ConfusionMatrix(task="multiclass", num_classes=100).to(device)
+        cutmix = v2.CutMix(num_classes=args.num_classes)
         total = 0
         correct_classified = 0
-        cmi = populate_cmi(train_loader)
+        cmi = populate_cmi(train_loader, use_cutmix=use_cutmix)
+        centroid_div = kl_div(cmi.centroids.log(), torch.eye(args.num_classes, dtype=torch.float32).to(device))
+
         with torch.no_grad():
-            for ((img, labels), (img2, _)) in zip(train_loader, train_loader2):
+            for (img, labels) in train_loader:
                 img = img.to(device)
-                img2 = img2.to(device)
+                # img2 = img2.to(device)
                 labels = labels.to(device)
-                pred = model_t(img)
-                pred2 = model_t(img2)
+                if use_cutmix:
+                    img, labels = cutmix(img, labels)
+                feat, _, pred = model_t(img, is_feat=True)
+                # feat2, _, pred2 = model_t(img2, is_feat=True)
+
                 _, predicted = torch.max(pred.data, 1)
+
+                # for f in feat:
+                #     print(f.size())
+                # assert(False)
+                # for f1, f2 in zip(feat, feat2):
+                #     if f1.ndim > 2:
+                #         f1 = pool(f1).view(args.batch_size, -1)
+                #         f2 = pool(f2).view(args.batch_size, -1)
+                #     print(f1.size())
+                #     vec_sim = -kl_div(f1, f2)
+                #     print(vec_sim)
+                    # print(vec_sim[0:10])
+
+                # vec_sim = cosine_sim(feat[-1], feat2[-1])
+                # logit_sim = cosine_sim(pred, pred2)
+                entropy1 = torch.distributions.Categorical(logits=pred).entropy()
+                # entropy2 = torch.distributions.Categorical(logits=pred2).entropy()
+                # print(logit_sim[0:10])
+                avg_entropy.update(entropy1)
+                # avg_entropy.update(entropy2)
                 # cmi(pred, labels)
                 assert(cmi.is_ready)
                 ent = entropy_no_reduce(pred, labels)
-                ent2 = entropy_no_reduce(pred2, labels)
-                min_loss = torch.minimum(ent, ent2).mean()
+                # ent2 = entropy_no_reduce(pred2, labels)
+                # min_loss = torch.minimum(ent, ent2).mean()
                 loss = criterion(pred, labels)
-                loss2 = criterion(pred2, labels)
-                aug_loss = kl_div(log_soft(pred), log_soft(pred2))
+                # loss2 = criterion(pred2, labels)
+
+
                 avg_train_loss.update(loss)
-                avg_train_loss.update(loss2)
-                avg_min_loss.update(min_loss)
-                avg_aug_diff.update(aug_loss)
-                conf.update(pred, labels)
+                # avg_train_loss.update(loss2)
+                # avg_min_loss.update(min_loss)
+                # avg_vec_sim.update(vec_sim)
+                # avg_logit_sim.update(logit_sim)
+                # conf.update(pred, labels)
                 loss_cmi = cmi.get_loss(pred, labels)
-                loss_masked_cmi = cmi.get_loss(pred[predicted == labels], labels[predicted == labels])
+                # loss_masked_cmi = cmi.get_loss(pred[predicted == labels], labels[predicted == labels])
                 # Experimental masking
                 avg_cmi_loss.update(loss_cmi)
-                avg_masked_cmi_loss.update(loss_masked_cmi)
+                # avg_masked_cmi_loss.update(loss_masked_cmi)
                 correct_classified += (predicted == labels).sum().item()
                 total += pred.size(0)
 
@@ -494,9 +533,8 @@ def main():
         loss_score = -1.0 * avg_train_loss.compute().item()
         min_loss_score = -1.0 * avg_min_loss.compute().item()
         cmi_score = -1.0 * avg_cmi_loss.compute().item() 
-        aug_diff_score = -1.0 * avg_aug_diff.compute().item()
         masked_cmi_score = -1.0 * avg_masked_cmi_loss.compute().item() 
-        confusion = conf.compute().cpu().tolist()
+        # confusion = conf.compute().cpu().tolist()
         # score = 0.5 * loss_score + cmi_score
         score = loss_score + cmi_score
 
@@ -513,20 +551,24 @@ def main():
             print(f"Configuration #{i} did not pass")
 
         out.update({"idx": i, "loss_score": loss_score, "cmi_score": cmi_score, "score": score, 
-                    "acc": acc, "masked_cmi": masked_cmi_score, "confusion": confusion, "aug_logits": aug_diff_score, "min_loss": min_loss_score})
+                    "acc": acc, "masked_cmi": masked_cmi_score, "min_loss": min_loss_score, 
+                    "logit_sim": avg_logit_sim.compute().item(), "vector_sim": avg_vec_sim.compute().item(), 
+                    "entropy": avg_entropy.compute().item(), "centroid_div": centroid_div.item(),
+                    "centroids": cmi.centroids.tolist()})
         return out
 
     scores = []
     best_score = -100.0
+    # use_cutmix = True
 
     # for outer in range(0, 500):
-    #     temp = do_iteration(outer, best_score, do_print=True)
+    #     temp = do_iteration(outer, best_score, do_print=True, use_cutmix=use_cutmix)
     #     if temp["score"] > best_score:
     #         best_score = temp["score"]
     #     scores.append(temp)
 
     # scores.sort(key=lambda x: x["score"], reverse=True)
-    # with open("augment_scores_cm3.json", "w") as f:
+    # with open("augment_scores_resnet.json", "w") as f:
     #     # Dump the data into the file
     #     json.dump(scores, f)
 
@@ -544,13 +586,33 @@ def main():
 
     # good = v2.RandomChoice(good)
 
-    good = v2.AutoAugment(policy=v2.AutoAugmentPolicy.CIFAR10)
-
+    auto = v2.AutoAugment(policy=v2.AutoAugmentPolicy.CIFAR10)
+    special = [
+        ("AutoAugmentCifar", v2.AutoAugment(policy=v2.AutoAugmentPolicy.CIFAR10)),
+        ("AutoAugmentImagenet", v2.AutoAugment(policy=v2.AutoAugmentPolicy.IMAGENET)),
+        ("AutoAugmentSVHN", v2.AutoAugment(policy=v2.AutoAugmentPolicy.SVHN)),
+        ("TrivialAugment", TAW()),
+        ("RandAugment", v2.RandAugment()),
+        ("AugMix", v2.AugMix()),
+        ("Erasing", v2.RandomErasing())
+    ]
     # good = TAW()
+    idx = 0
+    scores = []
+    for (name, aug) in special:
+        temp = do_iteration(idx, -10000, use_augs=[aug], do_print=True, use_cutmix=True, name=name)
+        idx += 1
+        scores.append(temp)
+        temp2 = do_iteration(idx, -10000, use_augs=[aug], do_print=True, use_cutmix=False, name=name)
+        idx += 1
+        scores.append(temp2)
 
-    temp = do_iteration(0, -10000, use_augs=[good], do_print=True)
-    scores = [temp]
-    with open("temp.json", "w") as f:
+    # temp = do_iteration(0, -10000, use_augs=[auto], do_print=True, use_cutmix=True)
+    # temp2 = do_iteration(1, -10000, use_augs=[TAW()], do_print=True, use_cutmix=True)
+    # temp3 = do_iteration(2, -10000, use_augs=[auto], do_print=True, use_cutmix=False)
+    # temp4 = do_iteration(3, -10000, use_augs=[TAW()], do_print=True, use_cutmix=False)
+    # scores = [temp, temp2, temp3, temp4]
+    with open("temp3.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
 

@@ -1,16 +1,5 @@
 #!/bin/bash
 
-# Example execution ./scripts/ablation_vgg_cifar100.sh 2.0 3 35
-# Where alpha = 2.0, 3 views per image, and 0.35 CMI learner
-
-####################################################################################
-# Dataset: CIFAR-100
-# Model: VGG-13
-# 'weight_levels' and 'act_levels' correspond to 2^b, where b is a target bit-width.
-
-# Method: FP, EWGS, EWGS+SQAKD
-# Bit-width: W1A1, W2A2, W4A4
-####################################################################################
 yell() { echo "$0: $*" >&2; }
 die() { yell "$*"; exit 111; }
 try() { "$@" || die "cannot $*"; }
@@ -23,42 +12,33 @@ start=$(date +%s)
 start_fmt=$(date +%Y-%m-%d\ %r)
 echo "STARTING TIMING RUN AT $start_fmt"
 
+gpu_id=$1
+num_workers=$2
+transform=$3
+cutmix=$4
 
-alpha=$1
-num_transforms=$2
-cmi=$3
-# Note, cmi is in "centicmi"
-if [ $3 -eq 0 ]; then
-    teacher="fp2"
-elif [ $3 -eq 20 ]; then 
-    teacher="fp_cmi"
-elif [ $3 -eq 35 ]; then 
-    teacher="fp_cmi3"
-elif [ $3 -eq 10 ]; then
-    teacher="fp_cmi4"
-elif [ $3 -eq 99 ]; then
-    teacher="fp_retrain"
-elif [ $3 -eq 50 ]; then
-    teacher="fp_cutmix"
-else
-    die "Unimplemented CMI: $3"
-fi
+quantization=8
+alpha=2.0
+num_epochs=200
+num_transforms=1
+teacher="fp_cutmix"
+seed=20250215
 
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
-teacher_path="./results/CIFAR100_VGG13/${teacher}/checkpoint/last_checkpoint.pth"
+teacher_path="./results/CIFAR100_ResNet32/${teacher}/checkpoint/last_checkpoint.pth"
 echo "Teacher Path: $teacher_path"
 
-METHOD_TYPE="none_no_${alpha}_trans_${num_transforms}_cmi_${cmi}"
+METHOD_TYPE="${quantization}_${transform}_${cutmix}_${num_transforms}"
 echo "Method Type: $METHOD_TYPE"
 
 # Logic  
 
-python3 train_quant.py --gpu_id '0' \
+python3 train_quant.py --gpu_id $gpu_id \
                     --dataset 'cifar100' \
-                    --arch 'vgg13_bn_quant' \
-                    --num_workers 8 \
+                    --arch 'resnet32_quant' \
+                    --num_workers $num_workers \
                     --batch_size 64 \
                     --weight_decay 5e-4 \
                     --optimizer_m 'Adam' \
@@ -67,21 +47,21 @@ python3 train_quant.py --gpu_id '0' \
                     --lr_q 5e-6 \
                     --lr_scheduler_m 'cosine' \
                     --lr_scheduler_q 'cosine' \
-                    --epochs 200 \
-                    --weight_levels 4 \
-                    --act_levels 4 \
+                    --epochs $num_epochs \
+                    --weight_levels $quantization \
+                    --act_levels $quantization \
                     --baseline False \
                     --use_hessian True \
                     --load_pretrain True \
                     --pretrain_path $teacher_path \
-                    --log_dir './results/CIFAR100_VGG13/Ablation/'$METHOD_TYPE \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
                     --distill 'siam' \
-                    --teacher_arch 'vgg13_bn_fp' \
+                    --teacher_arch 'resnet32_fp' \
                     --teacher_path $teacher_path \
-                    --seed 20240913 \
+                    --seed $seed \
                     --num_transforms $num_transforms \
-                    --transform "none" \
-                    --cutmix False \
+                    --transform $transform \
+                    --cutmix $cutmix \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
                     --decay_alpha False \
