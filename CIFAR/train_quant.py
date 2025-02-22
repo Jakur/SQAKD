@@ -363,8 +363,8 @@ if args.distill:
     # append teacher after optimizer to avoid weight_decay
     module_list.append(model_t)
 
-    module_list.cuda()
-    criterion_list.cuda()
+    module_list.to(device)
+    criterion_list.to(device)
 
 criterion = nn.CrossEntropyLoss()
 
