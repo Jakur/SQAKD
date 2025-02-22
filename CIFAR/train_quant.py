@@ -319,7 +319,7 @@ if args.distill:
     model_t = utils.load_teacher_model(model_t, args.teacher_path)
 
     num_training_data = len(train_dataset)
-    module_list, model_params, criterion_list = utils_distill.define_distill_module_and_loss(model, model_t, model_params, args, num_training_data, train_loader)
+    module_list, model_params, criterion_list = utils_distill.define_distill_module_and_loss(model, model_t, model_params, args, num_training_data, train_loader, device)
 
 
 if define_quantizer_scheduler:

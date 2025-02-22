@@ -20,10 +20,10 @@ import torch.backends.cudnn as cudnn
 num_calls = 0
 
 # for distillation, only use when args.distill is not None
-def define_distill_module_and_loss(model_s, model_t, model_params, args, n_data, train_loader):
+def define_distill_module_and_loss(model_s, model_t, model_params, args, n_data, train_loader, device):
     printRed("Define distillation modules and loss terms")
     flatGroupOut = True if args.distill == 'crdst' else False
-    data = torch.randn(2, 3, 32, 32).cuda() 
+    data = torch.randn(2, 3, 32, 32).to(device)
     model_t.eval()
     model_s.eval()
     feat_t, block_out_t, _ = model_t(data, is_feat=True, flatGroupOut=flatGroupOut)
