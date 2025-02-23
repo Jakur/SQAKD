@@ -31,6 +31,13 @@ then
                     --arch 'vgg8_bn_fp' \
                     --log_dir './results/CIFAR10_VGG8/'$METHOD_TYPE
 
+elif [ $METHOD_TYPE == "fp_cutmix/" ] 
+then
+    python3 train_fp.py --gpu_id '0' \
+                    --arch 'vgg8_bn_fp' \
+                    --log_dir './results/CIFAR10_VGG8/'$METHOD_TYPE \
+                    --cutmix True
+
 # EWGS
 elif [ $METHOD_TYPE == "EWGS/W4A4/" ] 
 then

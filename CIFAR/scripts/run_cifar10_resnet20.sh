@@ -32,6 +32,13 @@ then
                     --log_dir './results/CIFAR10_ResNet20/'$METHOD_TYPE \
                     --epochs 1200
 
+elif [ $METHOD_TYPE == "fp_cutmix/" ] 
+then
+    python3 train_fp.py --gpu_id '0' \
+                    --arch 'resnet20_fp' \
+                    --log_dir './results/CIFAR10_ResNet20/'$METHOD_TYPE \
+                    --cutmix True \
+                    --epochs 1200
 # W1A1
 # EWGS
 elif [ $METHOD_TYPE == "EWGS/W1A1/" ] 

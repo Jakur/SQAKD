@@ -211,7 +211,7 @@ cutmix = v2.CutMix(num_classes=args.num_classes)
 ### train
 best_acc = 0
 baseline_cmi = None
-cmi = Centroid().to(device)
+cmi = Centroid(num_classes=args.num_classes).to(device)
 for ep in range(train_epochs):
     if args.self_supervised:
         model.eval() # Turn off batch norm "learning"
