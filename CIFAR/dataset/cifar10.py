@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from PIL import Image
 import sys
+from torchvision.transforms import v2
 
 '''
 The CIFAR-10 dataset consists of 60000 32x32 colour images in 10 classes, with 6000 images per class. 
@@ -14,17 +15,125 @@ There are 50,000 training images and 10,000 test images.
 
 '''
 
+MEAN = (0.4914, 0.4822, 0.4465)
+STD = (0.2023, 0.1994, 0.2010)
+
 transform_train = transforms.Compose([
     transforms.RandomCrop(32, padding=4),
     transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    transforms.Normalize(MEAN, STD),
 ])
 transform_test = transforms.Compose([
     transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    transforms.Normalize(MEAN, STD),
 ])
 
+def build_augmentation_transform(extra: list):
+    return transforms.Compose([
+        transforms.RandomCrop(32, padding=4), 
+        transforms.RandomHorizontalFlip(),
+        transforms.Compose(extra),
+        transforms.ToTensor(),
+        transforms.Normalize(MEAN, STD),
+    ])
+
+def get_heavy_augment_transform():
+    auto = transforms.AutoAugment(transforms.AutoAugmentPolicy.CIFAR10)
+    return transforms.Compose([
+        transforms.RandomCrop(32, padding=4), 
+        transforms.RandomHorizontalFlip(),
+        auto,
+        transforms.ToTensor(),
+        transforms.Normalize(MEAN, STD),
+    ])
+
+def get_general_transform(trans):
+    return transforms.Compose([
+        transforms.RandomCrop(32, padding=4), 
+        transforms.RandomHorizontalFlip(),
+        trans,
+        transforms.ToTensor(),
+        transforms.Normalize(MEAN, STD),
+    ])
+
+def get_augmix_transform():
+    auto = v2.AugMix()
+    return get_general_transform(auto)
+
+def get_trivial_transform():
+    trivial = transforms.TrivialAugmentWide()
+    return get_general_transform(trivial)
+
+def get_rand_transform():
+    rand = v2.RandAugment()
+    return get_general_transform(rand)
+
+def get_erasing_transform():
+    erasing = v2.RandomErasing()
+    return get_general_transform(erasing)
+
+def get_imagenet_aa_transform():
+    aa = v2.AutoAugment(v2.AutoAugmentPolicy.IMAGENET)
+    return get_general_transform(aa)
+
+def get_svhn_aa_transform():
+    aa = v2.AutoAugment(v2.AutoAugmentPolicy.SVHN)
+    return get_general_transform(aa)
+
+
+def get_custom(custom):
+    if isinstance(custom, str):
+        if custom == "auto":
+            trans = get_heavy_augment_transform()
+        elif custom == "trivial":
+            trans = get_trivial_transform()
+        elif custom == "custom":
+            return NotImplementedError
+        elif custom == "augmix":
+            trans = get_augmix_transform()
+        elif custom == "rand":
+            trans = get_rand_transform()
+        elif custom == "erasing":
+            trans = get_erasing_transform()
+        elif custom == "autoimg":
+            trans = get_imagenet_aa_transform()
+        elif custom == "autosvhn":
+            trans = get_svhn_aa_transform()
+        elif custom == "none":
+            trans = transform_train
+        else:
+            return NotImplementedError
+    else:
+        trans = build_augmentation_transform(custom)
+    return trans
+
+class CIFAR100Augment(datasets.CIFAR100):
+    """CIFAR100DataAugmentation Dataset.
+    """
+    def __init__(self, num_transforms=3, **kwargs):
+        super().__init__(**kwargs)
+        self.num_transform = num_transforms
+
+    def __getitem__(self, index):
+        img, target = self.data[index], self.targets[index]
+
+        # doing this so that it is consistent with all other datasets
+        # to return a PIL Image
+        base_img = Image.fromarray(img)
+        # imgs = [train_transform(base_img)]
+        imgs = []
+        if self.transform is not None:
+            for _ in range(self.num_transform):
+                img = self.transform(base_img)
+                imgs.append(img)
+        else:
+            return NotImplementedError
+
+        if self.target_transform is not None:
+            target = self.target_transform(target)
+
+        return imgs, target
 
 
 class CIFAR10InstanceSample(datasets.CIFAR10):
@@ -104,10 +213,14 @@ class CIFAR10InstanceSample(datasets.CIFAR10):
 
 
 
-def get_cifar10_dataloaders(data_folder):
+def get_cifar10_dataloaders(data_folder, is_augment=False, custom_transform=None):
+    if custom_transform is not None:
+        t_transform = get_custom(custom_transform)
+    else:
+        t_transform = transform_train
     train_dataset = datasets.CIFAR10(root=data_folder,
                             train=True, 
-                            transform=transform_train,
+                            transform=t_transform,
                             download=True)
     
     test_dataset = datasets.CIFAR10(root=data_folder,

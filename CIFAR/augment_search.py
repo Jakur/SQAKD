@@ -21,6 +21,7 @@ import utils
 from models.custom_models_resnet import *
 from models.custom_models_vgg import * 
 
+from dataset.cifar10 import get_cifar10_dataloaders
 from dataset.cifar100 import get_cifar100_dataloaders, build_augmentation_transform, test_transform
 from models.util import Centroid
 from torchmetrics.aggregation import MeanMetric
@@ -328,7 +329,14 @@ def main():
         torch.manual_seed(seed)
         return
 
-    args.num_classes = 100 # Todo not hardcode
+    if args.dataset == "cifar10":
+        args.num_classes = 10
+        train_dataset, _ = get_cifar10_dataloaders("./dataset/data/CIFAR10/")
+        train_dataset2, _ = get_cifar10_dataloaders("./dataset/data/CIFAR10/")
+    else:
+        args.num_classes = 100
+        train_dataset, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
+        train_dataset2, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
 
     model_class_t = globals().get(args.teacher_arch)
     model_t = model_class_t(args)
@@ -337,8 +345,6 @@ def main():
     model_t = model_t.eval()
     # model_t = model_t.train()
 
-    train_dataset, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
-    train_dataset2, _ = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False)
     # end = model_t.classifier.weight.clone().detach()
     # end_b = model_t.classifier.bias.clone().detach()
 
@@ -397,7 +403,7 @@ def main():
         return
 
     def populate_cmi(loader, use_cutmix=False):
-        cmi = Centroid().to(device)
+        cmi = Centroid(num_classes=args.num_classes).to(device)
         cutmix = v2.CutMix(num_classes=args.num_classes)
         # train_loader, _ = get_loaders(test_transform) # First pass  
         with torch.no_grad():
@@ -526,7 +532,8 @@ def main():
                 # Experimental masking
                 avg_cmi_loss.update(loss_cmi)
                 # avg_masked_cmi_loss.update(loss_masked_cmi)
-                correct_classified += (predicted == labels).sum().item()
+                if predicted.ndim == labels.ndim: 
+                    correct_classified += (predicted == labels).sum().item()
                 total += pred.size(0)
 
         acc = correct_classified / total
@@ -586,24 +593,24 @@ def main():
 
     # good = v2.RandomChoice(good)
 
-    auto = v2.AutoAugment(policy=v2.AutoAugmentPolicy.CIFAR10)
     special = [
+        ("AugMix", v2.AugMix()),
         ("AutoAugmentCifar", v2.AutoAugment(policy=v2.AutoAugmentPolicy.CIFAR10)),
         ("AutoAugmentImagenet", v2.AutoAugment(policy=v2.AutoAugmentPolicy.IMAGENET)),
         ("AutoAugmentSVHN", v2.AutoAugment(policy=v2.AutoAugmentPolicy.SVHN)),
-        ("TrivialAugment", TAW()),
+        ("Erasing", v2.RandomErasing()),
         ("RandAugment", v2.RandAugment()),
-        ("AugMix", v2.AugMix()),
-        ("Erasing", v2.RandomErasing())
+        ("TrivialAugment", TAW()),
+        ("None", v2.Identity()),
     ]
     # good = TAW()
     idx = 0
     scores = []
     for (name, aug) in special:
-        temp = do_iteration(idx, -10000, use_augs=[aug], do_print=True, use_cutmix=True, name=name)
+        temp = do_iteration(idx, -10000, use_augs=[aug], do_print=True, use_cutmix=False, name=name)
         idx += 1
         scores.append(temp)
-        temp2 = do_iteration(idx, -10000, use_augs=[aug], do_print=True, use_cutmix=False, name=name)
+        temp2 = do_iteration(idx, -10000, use_augs=[aug], do_print=True, use_cutmix=True, name=name)
         idx += 1
         scores.append(temp2)
 
@@ -612,7 +619,8 @@ def main():
     # temp3 = do_iteration(2, -10000, use_augs=[auto], do_print=True, use_cutmix=False)
     # temp4 = do_iteration(3, -10000, use_augs=[TAW()], do_print=True, use_cutmix=False)
     # scores = [temp, temp2, temp3, temp4]
-    with open("temp3.json", "w") as f:
+    arch = args.teacher_arch.split("_")[0]
+    with open(f"known_{arch}_{args.num_classes}.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
 

@@ -111,7 +111,7 @@ parser.add_argument('--nce_t', default=0.1, type=float, help='temperature parame
 parser.add_argument('--nce_m', default=0.5, type=float, help='momentum for non-parametric updates')
 parser.add_argument('--head', default='linear', type=str, choices=['linear', 'mlp', 'pad'])
 parser.add_argument('--crd_no_labels', type=str2bool, default=False, help="Disable using label information for choosing negatives, as in SimCLR")
-parser.add_argument('--num_transforms', default=3, type=int, help="Number of transforms to use for SimSiam Distillation")
+parser.add_argument('--num_transforms', default=1, type=int, help="Number of transforms to use for SimSiam Distillation")
 parser.add_argument('--transform', type=str, default="auto", choices=["auto", "trivial", "custom", "augmix", 
                                                                       "rand", "erasing", "autoimg", "autosvhn", "none"], 
                                                                       help="String value indicating transforms to use")
@@ -170,12 +170,13 @@ def _init_fn(worker_id):
 
 
 if args.dataset == 'cifar10':
+    assert(args.distill != 'siam' or args.num_transforms == 1)
     args.num_classes = 10
     if args.distill == 'crd' or args.distill == 'crdst':
         train_dataset, test_dataset = get_cifar10_dataloaders_sample(data_folder="./dataset/data/CIFAR10/", k=args.nce_k, mode=args.mode)
         
     else:
-        train_dataset, test_dataset = get_cifar10_dataloaders(data_folder="./dataset/data/CIFAR10/")
+        train_dataset, test_dataset = get_cifar10_dataloaders(data_folder="./dataset/data/CIFAR10/", custom_transform=args.transform)
 
 elif args.dataset == 'cifar100':
     args.num_classes = 100

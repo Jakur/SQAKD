@@ -276,38 +276,39 @@ class CIFAR100Augment(datasets.CIFAR100):
             target = self.target_transform(target)
 
         return imgs, target
+    
 
+def get_custom(custom):
+    if isinstance(custom, str):
+        if custom == "auto":
+            trans = get_heavy_augment_transform()
+        elif custom == "trivial":
+            trans = get_trivial_transform()
+        elif custom == "custom":
+            trans = found_augment_transform()
+        elif custom == "augmix":
+            trans = get_augmix_transform()
+        elif custom == "rand":
+            trans = get_rand_transform()
+        elif custom == "erasing":
+            trans = get_erasing_transform()
+        elif custom == "autoimg":
+            trans = get_imagenet_aa_transform()
+        elif custom == "autosvhn":
+            trans = get_svhn_aa_transform()
+        elif custom == "none":
+            trans = train_transform
+        else:
+            return NotImplementedError
+    else:
+        trans = build_augmentation_transform(custom)
+    return trans
 
 def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=False, is_augment=False, num_transforms=3, agg_trans=False, 
                              custom_transform=None, size=50000):
     """
     cifar 100
     """
-    def get_custom(custom):
-        if isinstance(custom, str):
-            if custom == "auto":
-                trans = get_heavy_augment_transform()
-            elif custom == "trivial":
-                trans = get_trivial_transform()
-            elif custom == "custom":
-                trans = found_augment_transform()
-            elif custom == "augmix":
-                trans = get_augmix_transform()
-            elif custom == "rand":
-                trans = get_rand_transform()
-            elif custom == "erasing":
-                trans = get_erasing_transform()
-            elif custom == "autoimg":
-                trans = get_imagenet_aa_transform()
-            elif custom == "autosvhn":
-                trans = get_svhn_aa_transform()
-            elif custom == "none":
-                trans = train_transform
-            else:
-                return NotImplementedError
-        else:
-            trans = build_augmentation_transform(custom_transform)
-        return trans
     if self_supervised:
         train_set = datasets.CIFAR100(root=data_folder,
                                       download=True,

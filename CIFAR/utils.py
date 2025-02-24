@@ -84,6 +84,7 @@ def init_quant_model(model, train_loader, device, distill=None):
         images, labels = next(iterloader) 
 
     images = images.to(device)
+    print(images.size())
 
     model.train()
     model.forward(images)

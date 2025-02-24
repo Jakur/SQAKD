@@ -140,6 +140,29 @@ then
                         --kd_alpha 1.0 \
                         --kd_beta 0.0 \
                         --epochs 1200 
+
+elif [ $METHOD_TYPE == "W2A2_2/" ] 
+then
+    python3 train_quant.py --gpu_id '0' \
+                        --arch 'resnet20_quant' \
+                        --epochs 800 \
+                        --weight_levels 4 \
+                        --act_levels 4 \
+                        --baseline False \
+                        --use_hessian True \
+                        --load_pretrain True \
+                        --pretrain_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                        --log_dir './results/CIFAR10_ResNet20/'$METHOD_TYPE \
+                        --distill 'kd' \
+                        --num_transforms 1 \
+                        --transform 'none' \
+                        --cutmix False \
+                        --teacher_arch 'resnet20_fp' \
+                        --teacher_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                        --kd_gamma 1.0 \
+                        --kd_alpha 2.0 \
+                        --kd_beta 0.0 \
+                        --seed 20240913
  
 fi
 
