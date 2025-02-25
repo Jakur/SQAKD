@@ -141,11 +141,11 @@ then
                         --kd_beta 0.0 \
                         --epochs 1200 
 
-elif [ $METHOD_TYPE == "W2A2_2/" ] 
+elif [ $METHOD_TYPE == "W2A2_3/" ] 
 then
     python3 train_quant.py --gpu_id '0' \
                         --arch 'resnet20_quant' \
-                        --epochs 800 \
+                        --epochs 1200 \
                         --weight_levels 4 \
                         --act_levels 4 \
                         --baseline False \

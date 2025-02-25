@@ -19,7 +19,7 @@ cutmix=$4
 
 quantization=4
 alpha=2.0
-num_epochs=400
+num_epochs=1200
 num_transforms=1
 teacher="fp_cutmix"
 seed=20240913
@@ -27,7 +27,7 @@ seed=20240913
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
-teacher_path="./results/CIFAR10_VGG8/${teacher}/checkpoint/last_checkpoint.pth"
+teacher_path="./results/CIFAR10_ResNet20/${teacher}/checkpoint/last_checkpoint.pth"
 echo "Teacher Path: $teacher_path"
 
 METHOD_TYPE="${quantization}_${transform}_${cutmix}_${num_transforms}"
@@ -36,7 +36,7 @@ echo "Method Type: $METHOD_TYPE"
 # Logic  
 
 python3 train_quant.py --gpu_id $gpu_id \
-                    --arch 'vgg8_bn_quant' \
+                    --arch 'resnet20_quant' \
                     --epochs $num_epochs \
                     --num_workers $num_workers \
                     --weight_levels $quantization \
@@ -44,14 +44,14 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --baseline False \
                     --use_hessian True \
                     --load_pretrain True \
-                    --pretrain_path './results/CIFAR10_VGG8/fp_cutmix/checkpoint/last_checkpoint.pth' \
-                    --log_dir './results/CIFAR10_VGG8/'$METHOD_TYPE \
+                    --pretrain_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --log_dir './results/CIFAR10_ResNet20/'$METHOD_TYPE \
                     --distill 'kd' \
                     --num_transforms $num_transforms \
                     --transform $transform \
                     --cutmix $cutmix \
-                    --teacher_arch 'vgg8_bn_fp' \
-                    --teacher_path './results/CIFAR10_VGG8/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --teacher_arch 'resnet20_fp' \
+                    --teacher_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth' \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
                     --kd_beta 0.0 \

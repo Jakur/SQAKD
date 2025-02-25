@@ -3,20 +3,27 @@ import os
 import time
 from subprocess import Popen, PIPE
 
-resnet = False
-if resnet:
-    assert(False)
+resnet = os.environ.get("USE_RESNET", "True")
+num_gpus = int(os.environ.get("GPU_COUNT", 1))
+cutmix_status = os.environ.get("USE_CUTMIX", "Both")
+cpus_per_job = int(os.environ.get("USE_CPU", 12))
+
+if resnet.lower().startswith("t"):
+    script = "./scripts/experiment_cifar10_resnet20.sh"
 else:
     script = './scripts/experiment_cifar10_vgg8.sh'
-num_gpus = int(os.environ.get("GPU_COUNT", 1))
+
 print(f"Number of GPUs: {num_gpus}")
+
 jobs_per_gpu = 1
-# num_cpus = 64
-# use_cores = num_cpus // num_gpus
-cpus_per_job = 16
 
 augments = ["auto", "trivial", "augmix", "rand", "erasing", "autoimg", "autosvhn", "none"]
-cutmix = ["True", "False"]
+if cutmix_status.lower().startswith("t"):
+    cutmix = ["True"]
+elif cutmix_status.lower().startswith("f"):
+    cutmix = ["False"]
+else:
+    cutmix = ["True", "False"]
 
 search = sorted(list(itertools.product(augments, cutmix)))
 print(search)
