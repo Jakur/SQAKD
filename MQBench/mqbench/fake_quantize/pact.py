@@ -1,18 +1,17 @@
 import torch
 from torch.nn.parameter import Parameter
+
 from mqbench.fake_quantize.quantize_base import QuantizeBase
 
 
 class PACTFakeQuantize(QuantizeBase):
-    def __init__(self, observer, backward_method=None, alpha=6.0, **observer_kwargs):
+    def __init__(self, observer, alpha=6.0, **observer_kwargs):
         super(PACTFakeQuantize, self).__init__(observer, **observer_kwargs)
         self.alpha = Parameter(torch.tensor([alpha]))
         if not self.is_symmetric_quant:
             self.n_alpha = Parameter(torch.tensor([-alpha]))
         self.register_buffer('scale', torch.tensor([1.0], dtype=torch.float))
         self.register_buffer('zero_point', torch.tensor([0], dtype=torch.int))
-        self.backward_method = backward_method
-
 
     @torch.jit.export
     def extra_repr(self):
@@ -47,5 +46,7 @@ class PACTFakeQuantize(QuantizeBase):
             self.zero_point.copy_(_zero_point)
 
         if self.fake_quant_enabled[0] == 1:
-            X = torch.fake_quantize_per_tensor_affine(X, self.scale.item(), int(self.zero_point.item()), self.quant_min, self.quant_max)
+            X = torch.fake_quantize_per_tensor_affine(
+                X, self.scale.item(), int(self.zero_point.item()), self.quant_min, self.quant_max)
+
         return X

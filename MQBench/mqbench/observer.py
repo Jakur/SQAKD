@@ -1,11 +1,11 @@
 import math
-from functools import partial
 from typing import Tuple
+
 import torch
 from torch.quantization.observer import _ObserverBase
-
-from mqbench.utils import sync_tensor, pot_quantization, is_symmetric_quant, get_altopt_config
+from mqbench.utils import sync_tensor, pot_quantization, is_symmetric_quant
 from mqbench.utils.logger import logger
+from mqbench.utils.hook import PerChannelLoadHook
 
 
 class ObserverBase(_ObserverBase):
@@ -40,28 +40,6 @@ class ObserverBase(_ObserverBase):
         self.pot_scale = pot_scale
         self.register_buffer("min_val", torch.tensor(float("inf")))
         self.register_buffer("max_val", torch.tensor(float("-inf")))
-
-        class PerChannelLoadHook:
-            def __init__(self, module):
-                self.hook = module._register_load_state_dict_pre_hook(partial(self.hook_fn, module=module))
-
-            def hook_fn(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs,
-                        module):
-                if module.ch_axis == -1:
-                    # no per-channel parameters
-                    return
-                for module_key, param in module._buffers.items():
-                    if module_key not in ['min_val', 'max_val']:
-                        continue
-                    candidate = prefix + module_key
-                    if candidate in state_dict:
-                        input_param = state_dict[candidate]
-                        if param.shape != input_param.shape:
-                            param.data = torch.ones_like(input_param, dtype=param.dtype, device=param.device)
-
-            def close(self):
-                self.hook.remove()
-
         self.load_state_dict_hook = PerChannelLoadHook(self)
 
     @torch.jit.export
@@ -72,6 +50,25 @@ class ObserverBase(_ObserverBase):
         zero_point.data = sync_tensor(zero_point).data
         if self.pot_scale:
             scale = pot_quantization(scale)
+        return scale, zero_point
+
+    @torch.jit.export
+    def _calculate_qparams(
+        self, min_val: torch.Tensor, max_val: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        r"""Calculates the quantization parameters, given min and max
+        value tensors. Works for both per tensor and per channel cases
+
+        Args:
+            min_val: Minimum values per channel
+            max_val: Maximum values per channel
+
+        Returns:
+            scales: Scales tensor of shape (#channels,)
+            zero_points: Zero points tensor of shape (#channels,)
+        """
+        scale, zero_point = super()._calculate_qparams(min_val, max_val)
+        zero_point = zero_point.int()
         return scale, zero_point
 
     @torch.jit.export
@@ -121,7 +118,7 @@ class MinMaxObserver(ObserverBase):
             return x_orig
         x = x_orig.to(self.min_val.dtype)
         if self.ch_axis == -1:
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
         else:
             x_dim = x.size()
             new_axis_list = [i for i in range(len(x_dim))]
@@ -129,7 +126,7 @@ class MinMaxObserver(ObserverBase):
             new_axis_list[0] = self.ch_axis
             y = x.permute(new_axis_list)
             y = torch.flatten(y, start_dim=1)
-            min_val_cur, max_val_cur = torch._aminmax(y, 1)
+            min_val_cur, max_val_cur = torch.aminmax(y, dim = 1)
         self.min_val = torch.min(self.min_val, min_val_cur)
         self.max_val = torch.max(self.max_val, max_val_cur)
 
@@ -160,10 +157,10 @@ class MinMaxFloorObserver(ObserverBase):
             return x_orig
         x = x_orig.to(self.min_val.dtype)
         if self.ch_axis == -1:
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
         else:
             logger.warn('The per-tensor observer does not support per-channel min-max!')
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
 
         self.min_val = min_val_cur
         self.max_val = max_val_cur
@@ -230,7 +227,7 @@ class EMAMinMaxObserver(ObserverBase):
             return x_orig
         x = x_orig.to(self.min_val.dtype)
         if self.ch_axis == -1:
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
         else:
             x_dim = x.size()
             new_axis_list = [i for i in range(len(x_dim))]  # noqa: C416
@@ -238,7 +235,7 @@ class EMAMinMaxObserver(ObserverBase):
             new_axis_list[0] = self.ch_axis
             y = x.permute(new_axis_list)
             y = torch.flatten(y, start_dim=1)
-            min_val_cur, max_val_cur = torch._aminmax(y, 1)
+            min_val_cur, max_val_cur = torch.aminmax(y, dim=1)
 
         if self.max_val.numel() <= 1 and self.max_val.isinf():
             self.min_val = min_val_cur
@@ -268,10 +265,10 @@ class PoTModeObserver(ObserverBase):
             return x_orig
         x = x_orig.to(self.min_val.dtype)
         if self.ch_axis == -1:
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
         else:
             logger.warn('The per-tensor observer does not support per-channel min-max!')
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
 
         self.min_val = min_val_cur
         self.max_val = max_val_cur
@@ -342,7 +339,7 @@ class EMAQuantileObserver(ObserverBase):
         if x_orig.numel() == 0:
             return x_orig
         x = x_orig.to(self.min_val.dtype)
-        min_val_cur, max_val_cur = torch._aminmax(x)
+        min_val_cur, max_val_cur = torch.aminmax(x)
         max_hist_range = torch.max(-min_val_cur, max_val_cur)
         hist = torch.histc(torch.abs(x), bins=self.bins, min=0., max=max_hist_range)
         cur_total = 0
@@ -379,7 +376,7 @@ class ClipStdObserver(ObserverBase):
             return x_orig
         x = x_orig.to(self.min_val.dtype)
         if self.ch_axis == -1:
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
             mean = x.mean()
             std = x.std()
         else:
@@ -389,7 +386,7 @@ class ClipStdObserver(ObserverBase):
             new_axis_list[0] = self.ch_axis
             y = x.permute(new_axis_list)
             y = torch.flatten(y, start_dim=1)
-            min_val_cur, max_val_cur = torch._aminmax(y, 1)
+            min_val_cur, max_val_cur = torch.aminmax(y, dim=1)
             mean = y.mean(1)
             std = y.std(1)
 
@@ -420,7 +417,7 @@ class LSQObserver(ObserverBase):
         x = x_orig.to(self.min_val.dtype)
         if self.ch_axis == -1:
             self.tensor_norm = x.abs().mean()
-            self.min_val, self.max_val = torch._aminmax(x)
+            self.min_val, self.max_val = torch.aminmax(x)
         else:
             # compute channel-wise mean
             x_dim = x.size()
@@ -430,7 +427,7 @@ class LSQObserver(ObserverBase):
             y = x.permute(new_axis_list)
             y = torch.flatten(y, start_dim=1)
             self.tensor_norm = y.abs().mean(1)
-            self.min_val, self.max_val = torch._aminmax(y)
+            self.min_val, self.max_val = torch.aminmax(y, dim=1)
 
         return x
 
@@ -442,8 +439,7 @@ class LSQObserver(ObserverBase):
         if self.pot_scale:
             scale = pot_quantization(scale)
         if not is_symmetric_quant(self.qscheme):
-            if self.min_val >= 0.:
-                zero_point = self.quant_min - torch.round(self.min_val / scale)
+            zero_point = self.quant_min - torch.round(self.min_val / scale)
         return scale, zero_point
 
 
@@ -467,7 +463,7 @@ class LSQPlusObserver(ObserverBase):
         if self.ch_axis == -1:
             self.mean = x.mean()
             self.std = x.std()
-            self.min_val, self.max_val = torch._aminmax(x)
+            self.min_val, self.max_val = torch.aminmax(x)
         else:
             # compute channel-wise mean
             x_dim = x.size()
@@ -478,7 +474,7 @@ class LSQPlusObserver(ObserverBase):
             y = torch.flatten(y, start_dim=1)
             self.mean = y.mean(1)
             self.std = y.std(1)
-            self.min_val, self.max_val = torch._aminmax(y)
+            self.min_val, self.max_val = torch.aminmax(y)
 
         return x
 
@@ -486,10 +482,11 @@ class LSQPlusObserver(ObserverBase):
         scale = torch.maximum((self.mean - 3 * self.std).abs(),
                               (self.mean + 3 * self.std).abs()) / (self.quant_max - self.quant_min + 1)
         sync_tensor(scale)
-        sync_tensor(zero_point)
+        # sync_tensor(zero_point)
         if self.pot_scale:
             scale = pot_quantization(scale)
         zero_point = torch.zeros_like(self.mean)
+        sync_tensor(zero_point)
         if not is_symmetric_quant(self.qscheme):
             if self.min_val >= 0.:
                 zero_point = self.quant_min - torch.round(self.min_val / scale)
@@ -544,7 +541,7 @@ class MSEObserver(ObserverBase):
             new_max = x_max * (1.0 - (i * 0.01))
             scale, zero_point = self._calculate_qparams(new_min, new_max)
             x_q = torch.fake_quantize_per_channel_affine(
-                x, scale, zero_point.long(), ch_axis, 
+                x, scale, zero_point, ch_axis, 
                 self.quant_min, self.quant_max)
             score = self.lp_loss(x_q, x, reduce_dim)
             update_idx = (score < best_score)
@@ -559,7 +556,7 @@ class MSEObserver(ObserverBase):
             return x_orig
         x = x_orig.clone().detach().to(self.min_val.dtype)
         if self.ch_axis == -1:
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
             min_val_cur, max_val_cur = self.mse(x, min_val_cur, max_val_cur, iter=95)
         else:
             x_dim = x.size()
@@ -568,7 +565,7 @@ class MSEObserver(ObserverBase):
             new_axis_list[0] = self.ch_axis
             x_channel = x.permute(new_axis_list)
             y = torch.flatten(x_channel, start_dim=1)
-            min_val_cur, max_val_cur = torch._aminmax(y, 1)
+            min_val_cur, max_val_cur = torch.aminmax(y, dim=1)
             min_val_cur, max_val_cur = self.mse_perchannel(x, min_val_cur, max_val_cur, iter=80, ch_axis=self.ch_axis)
 
         self.min_val = torch.min(self.min_val, min_val_cur)
@@ -623,7 +620,7 @@ class EMAMSEObserver(ObserverBase):
             new_max = x_max * (1.0 - (i * 0.01))
             scale, zero_point = self._calculate_qparams(new_min, new_max)
             x_q = torch.fake_quantize_per_channel_affine(
-                x, scale, zero_point.long(), ch_axis, 
+                x, scale, zero_point, ch_axis, 
                 self.quant_min, self.quant_max)
             score = self.lp_loss(x_q, x, reduce_dim)
             update_idx = (score < best_score)
@@ -638,7 +635,7 @@ class EMAMSEObserver(ObserverBase):
             return x_orig
         x = x_orig.clone().detach().to(self.min_val.dtype)
         if self.ch_axis == -1:
-            min_val_cur, max_val_cur = torch._aminmax(x)
+            min_val_cur, max_val_cur = torch.aminmax(x)
             min_val_cur, max_val_cur = self.mse(x, min_val_cur, max_val_cur, iter=95)
         else:
             x_dim = x.size()
@@ -647,7 +644,7 @@ class EMAMSEObserver(ObserverBase):
             new_axis_list[0] = self.ch_axis
             x_channel = x.permute(new_axis_list)
             y = torch.flatten(x_channel, start_dim=1)
-            min_val_cur, max_val_cur = torch._aminmax(y, 1)
+            min_val_cur, max_val_cur = torch.aminmax(y, dim=1)
             min_val_cur, max_val_cur = self.mse_perchannel(x, min_val_cur, max_val_cur, iter=80, ch_axis=self.ch_axis)
 
         if self.max_val.numel() <= 1 and self.max_val.isinf():
@@ -657,159 +654,3 @@ class EMAMSEObserver(ObserverBase):
             self.min_val = self.min_val * self.ema_ratio + min_val_cur * (1.0 - self.ema_ratio)
             self.max_val = self.max_val * self.ema_ratio + max_val_cur * (1.0 - self.ema_ratio)
         return x
-
-class AltOptObserver(ObserverBase):
-    '''
-    Alt_Opt, search optimal alpha.
-    '''
-    def __init__(self, dtype=torch.quint8, qscheme=torch.per_tensor_affine,
-                 reduce_range=False, quant_min=None, quant_max=None, ch_axis=-1, pot_scale=False,
-                 factory_kwargs=None):
-        super(AltOptObserver, self).__init__(dtype, qscheme, reduce_range, quant_min, quant_max,
-                                             ch_axis, pot_scale, factory_kwargs)
-        self.tensor_norm = None
-
-    def forward(self, x_orig):
-        r"""Records the running minimum and maximum of ``x``."""
-        if x_orig.numel() == 0:
-            return x_orig
-        x = x_orig.to(self.min_val.dtype)
-        if self.ch_axis == -1:
-            min_val_cur, max_val_cur = torch._aminmax(x)
-            self.tensor_norm = x.abs().mean()
-        else:
-            x_dim = x.size()
-            new_axis_list = [i for i in range(len(x_dim))]
-            new_axis_list[self.ch_axis] = 0
-            new_axis_list[0] = self.ch_axis
-            y = x.permute(new_axis_list)
-            y = torch.flatten(y, start_dim=1)
-            min_val_cur, max_val_cur = torch._aminmax(y, 1)
-        self.min_val = torch.min(self.min_val, min_val_cur)
-        self.max_val = torch.max(self.max_val, max_val_cur)
-
-        return x
-    
-    def calculate_qparams(self, tensor_data, k, quant_max, quant_min, curr_scale):
-        configs = get_altopt_config()
-        if configs["sample_data"]:
-            data_shape = tensor_data.shape[0]
-            idx = torch.tensor([i for i in range(0, data_shape, 2)]).cuda()
-            tensor_data = torch.index_select(tensor_data, 0, idx)
-        
-        regions = configs["regions_0"]
-
-        a_min = quant_min
-        a_max = quant_max
-        
-        # v,m = torch.var_mean(torch.abs(tensor_data))
-        # alpha_max = (6*v + m) / (2**k - 1)
-        tensor_data = torch.flatten(tensor_data)
-        C = torch.sum(torch.square(tensor_data))
-
-        alpha_max = (torch.max(torch.abs(tensor_data)) / (2**k - 1))
-
-        num_blocks = configs["num_blocks"]
-
-        block_width = alpha_max / num_blocks
-        step = block_width / regions
-
-        init_alpha = torch.tensor(1.0)
-        min_loss = float("inf")
-        # print("alpha_max: {}".format(alpha_max))
-        edges = torch.linspace(0, alpha_max - step, steps=num_blocks)
-        for start_point in edges:
-            
-            start_range = step.item()/2 + start_point
-            end_range = start_point + block_width - step.item()/2
-            # print("step: {}, start_range: {}, end_range: {}".format(step, start_range, end_range))
-            block_alphas = torch.linspace(start_range, end_range, steps=regions).cuda()
-            # block_alphas = init_alphas
-        
-            Z = torch.clamp(torch.round(tensor_data[:,None]/block_alphas[None,:]), a_min, a_max)
-            A = torch.sum(torch.square(Z), 0)
-            B = torch.sum(-2* tensor_data[:,None]*Z, 0)
-            
-            block_final_losses = A*(block_alphas**2) + B*(block_alphas) + C
-            block_min_index = torch.argmin(block_final_losses)
-            block_min_loss = block_final_losses[block_min_index]
-            block_opt_alpha = block_alphas[block_min_index]
-            if block_min_loss < min_loss:
-                min_loss = block_min_loss
-                init_alpha.copy_(block_opt_alpha)
-
-        # step = alpha_max / regions
-        # start_range = step.item()/2
-        # end_range = alpha_max.item() - step.item()/2
-            
-        # init_alphas = torch.linspace(start_range, end_range, steps=regions).cuda()
-        # block_alphas = init_alphas
-        
-        # tensor_data = torch.flatten(tensor_data)
-
-        # C = torch.sum(torch.square(tensor_data))
-        # Z = torch.clamp(torch.round(tensor_data[:,None]/block_alphas[None,:]), a_min, a_max)
-        # A = torch.sum(torch.square(Z), 0)
-        # B = torch.sum(-2* tensor_data[:,None]*Z, 0)
-        
-        # final_losses = A*(block_alphas**2) + B*(block_alphas) + C
-        # min_index = torch.argmin(final_losses)
-        # init_alpha = init_alphas[min_index]
-
-        alpha = init_alpha
-        if configs["alt_opt"]:
-
-            improvement = float("inf")
-            new_loss = 0
-            loss = float("inf")
-            n = 0
-            rounds = configs["rounds"]
-            if configs["condition"] == "loss":
-                while new_loss < loss and torch.abs(alpha - init_alpha) < (step.cpu() / 2):
-                    loss = new_loss
-                    z = torch.clamp(torch.round(tensor_data / alpha), a_min, a_max)
-                    A = torch.sum(torch.square(z))
-                    B = torch.sum(-2 * tensor_data * z)
-
-                    new_alpha = -B/(2*A)
-                    alpha = new_alpha
-                    new_loss = A*alpha**2 + B*alpha + C
-                    n += 1
-                    if n > rounds:
-                        break
-                curr_loss = A*curr_scale**2 + B*curr_scale + C
-                # print("!!!", curr_loss, new_loss, curr_scale, alpha)
-                if curr_loss <= new_loss:
-                    # print(curr_scale, alpha)
-                    alpha = curr_scale
-            else:
-                while improvement > 10**-6 and torch.abs(alpha - torch.tensor(init_alpha)) < (step / 2):
-                    z = torch.clamp(torch.round(tensor_data / alpha), a_min, a_max)
-                    A = torch.sum(torch.square(z))
-                    B = torch.sum(-2 * tensor_data * z)
-
-                    new_alpha = -B/(2*A)
-                    improvement = torch.abs(new_alpha - alpha).item()
-                    alpha = new_alpha
-                    n += 1
-                    if n > rounds:
-                        break
-
-
-        scale = alpha
-        zero_point = torch.zeros_like(self.tensor_norm)
-        sync_tensor(scale)
-        sync_tensor(zero_point)
-        if self.pot_scale:
-            scale = pot_quantization(scale)
-        if not is_symmetric_quant(self.qscheme):
-            if self.min_val >= 0.:
-                zero_point = self.quant_min - torch.round(self.min_val / scale)
-                
-        del block_alphas
-        del block_final_losses
-        del A
-        del B
-        del Z
-        torch.cuda.empty_cache()
-        return scale, zero_point

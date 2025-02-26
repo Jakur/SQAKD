@@ -7,19 +7,36 @@ except ImportError:
     raise ImportError("Please install DALI from https://www.github.com/NVIDIA/DALI to run this example.")
 
 import os
+import datasets
+import torch
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+from torchvision.transforms import v2
+
+TRAIN_CROP = 224
+VAL_CROP = 256
 
 
 
 @pipeline_def
-def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu=False, is_training=True):
-    images, labels = fn.readers.file(file_root=data_dir,
-                                     shard_id=shard_id,
-                                     num_shards=num_shards,
-                                     random_shuffle=is_training,
-                                     pad_last_batch=True,
-                                     name="Reader")
+def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu=False, is_training=True, is_val=False):
+    if is_val:
+        images, labels = fn.readers.file(file_list=data_dir, file_root=os.path.join(data_dir, "images"),
+                                        shard_id=shard_id,
+                                        num_shards=num_shards,
+                                        random_shuffle=is_training,
+                                        pad_last_batch=True,
+                                        name="Reader")
+    else:
+        images, labels = fn.readers.file(file_root=data_dir,
+                                        shard_id=shard_id,
+                                        num_shards=num_shards,
+                                        random_shuffle=is_training,
+                                        pad_last_batch=True,
+                                        name="Reader")
     dali_device = 'cpu' if dali_cpu else 'gpu'
     decoder_device = 'cpu' if dali_cpu else 'mixed'
+    assert(dali_device != "cpu")
     # ask nvJPEG to preallocate memory for the biggest sample in ImageNet for CPU and GPU to avoid reallocations in runtime
     device_memory_padding = 211025920 if decoder_device == 'mixed' else 0
     host_memory_padding = 140544512 if decoder_device == 'mixed' else 0
@@ -78,45 +95,131 @@ def create_dali_pipeline(data_dir, crop, size, shard_id, num_shards, dali_cpu=Fa
     labels = labels.gpu()
     return images, labels
 
+def get_val_transform():
+    return v2.Compose([v2.Resize((VAL_CROP, VAL_CROP)),
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale=True),
+        v2.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ])
+
+def get_general_transform(trans):
+    return v2.Compose([v2.RandomResizedCrop((TRAIN_CROP, TRAIN_CROP)),
+        v2.RandomHorizontalFlip(0.5),
+        v2.ColorJitter(0.2, 0.2, 0.2, 0.1),
+        trans,
+        v2.ToImage(),
+        v2.ToDtype(torch.float32, scale=True),
+        v2.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+    ])
+
+def get_augmix_transform():
+    auto = v2.AugMix()
+    return get_general_transform(auto)
+
+def get_trivial_transform():
+    trivial = transforms.TrivialAugmentWide()
+    return get_general_transform(trivial)
+
+def get_rand_transform():
+    rand = v2.RandAugment()
+    return get_general_transform(rand)
+
+def get_erasing_transform():
+    erasing = v2.RandomErasing()
+    return get_general_transform(erasing)
+
+def get_imagenet_aa_transform():
+    aa = v2.AutoAugment(v2.AutoAugmentPolicy.IMAGENET)
+    return get_general_transform(aa)
+
+def get_svhn_aa_transform():
+    aa = v2.AutoAugment(v2.AutoAugmentPolicy.SVHN)
+    return get_general_transform(aa)
+
+class HFDataset(Dataset):
+    def __init__(self, ds, transform):
+        super().__init__()
+        self.ds = ds
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.ds)
+    
+    def __getitem__(self, index):
+        img = self.ds[index]["image"]
+        label = self.ds[index]["label"]
+        img = self.transform(img)
+        return img, label
+
+def build_train_transform(name):
+    if isinstance(name, str):
+        if name == "auto":
+            trans = v2.AutoAugment(v2.AutoAugmentPolicy.CIFAR10)
+        elif name == "trivial":
+            trans = transforms.TrivialAugmentWide()
+        elif name == "augmix":
+            trans = v2.AugMix()
+        elif name == "rand":
+            trans = v2.RandAugment()
+        elif name == "erasing":
+            trans = v2.RandomErasing()
+        elif name == "autoimg":
+            trans = v2.AutoAugment(v2.AutoAugmentPolicy.IMAGENET)
+        elif name == "autosvhn":
+            trans = v2.AutoAugment(v2.AutoAugmentPolicy.SVHN)
+        elif name == "none":
+            trans = v2.Identity()
+        else:
+            return NotImplementedError
+    else:
+        return NotImplementedError
+    return get_general_transform(trans)
 
 
 def imagenet_data_loader(args):
-    if len(args.data) == 1:
-        traindir = os.path.join(args.data[0], 'train')
-        valdir = os.path.join(args.data[0], 'val')
-    else:
-        traindir = args.data[0]
-        valdir= args.data[1]
+    train_ds = HFDataset(datasets.load_dataset("zh-plus/tiny-imagenet", split="train"), build_train_transform(args.transform))
+    val_ds = HFDataset(datasets.load_dataset("zh-plus/tiny-imagenet", split="valid"), get_val_transform())
+
+    train_loader = DataLoader(train_ds, args.batch_size, shuffle=True, num_workers=args.workers)
+    val_loader = DataLoader(val_ds, args.batch_size, shuffle=False, num_workers=args.workers)
+    # train_loader =  
+    # print(f"Data Folder: {args.data}")
+    # if len(args.data) == 1:
+    #     traindir = os.path.join(args.data[0], 'train')
+    #     valdir = os.path.join(args.data[0], 'val')
+    # else:
+    #     traindir = args.data[0]
+    #     valdir= args.data[1]
 
 
-    crop_size = 224
-    val_size = 256
+    # crop_size = 224
+    # val_size = 256
 
-    pipe = create_dali_pipeline(batch_size=args.batch_size,
-                                num_threads=args.workers,
-                                device_id=args.local_rank,
-                                seed=12 + args.local_rank,
-                                data_dir=traindir,
-                                crop=crop_size,
-                                size=val_size,
-                                dali_cpu=args.dali_cpu,
-                                shard_id=args.local_rank,
-                                num_shards=args.world_size,
-                                is_training=True)
-    pipe.build()
-    train_loader = DALIClassificationIterator(pipe, reader_name="Reader", last_batch_policy=LastBatchPolicy.PARTIAL)
-
-    pipe = create_dali_pipeline(batch_size=args.batch_size,
-                                num_threads=args.workers,
-                                device_id=args.local_rank,
-                                seed=12 + args.local_rank,
-                                data_dir=valdir,
-                                crop=crop_size,
-                                size=val_size,
-                                dali_cpu=args.dali_cpu,
-                                shard_id=args.local_rank,
-                                num_shards=args.world_size,
-                                is_training=False)
-    pipe.build()
-    val_loader = DALIClassificationIterator(pipe, reader_name="Reader", last_batch_policy=LastBatchPolicy.PARTIAL)
+    # pipe = create_dali_pipeline(batch_size=args.batch_size,
+    #                             num_threads=args.workers,
+    #                             device_id=args.local_rank,
+    #                             seed=12 + args.local_rank,
+    #                             data_dir=traindir,
+    #                             crop=crop_size,
+    #                             size=val_size,
+    #                             dali_cpu=args.dali_cpu,
+    #                             shard_id=args.local_rank,
+    #                             num_shards=args.world_size,
+    #                             is_training=True)
+    # pipe.build()
+    # train_loader = DALIClassificationIterator(pipe, reader_name="Reader", last_batch_policy=LastBatchPolicy.PARTIAL)
+    # val_label = os.path.join(valdir, "val_annotations.txt")
+    # pipe = create_dali_pipeline(batch_size=args.batch_size,
+    #                             num_threads=args.workers,
+    #                             device_id=args.local_rank,
+    #                             seed=12 + args.local_rank,
+    #                             data_dir=val_label,
+    #                             crop=crop_size,
+    #                             size=val_size,
+    #                             dali_cpu=args.dali_cpu,
+    #                             shard_id=args.local_rank,
+    #                             num_shards=args.world_size,
+    #                             is_training=False, is_val=True)
+    # pipe.build()
+    # val_loader = DALIClassificationIterator(pipe, reader_name="Reader", last_batch_policy=LastBatchPolicy.PARTIAL)
     return train_loader, val_loader

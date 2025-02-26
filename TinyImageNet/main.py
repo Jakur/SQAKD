@@ -15,6 +15,7 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
+import torchvision.transforms.v2 as v2
 # import torchvision.models as models
 
 from mqbench.convert_deploy import convert_deploy
@@ -103,6 +104,11 @@ def parse():
 
     # For training
     parser.add_argument('--optimizer_type', type=str, default='SGD', choices=('SGD','Adam'), help='optimizer for model paramters')
+    parser.add_argument('--transform', type=str, default="none", choices=["auto", "trivial", "custom", "augmix", 
+                                                                      "rand", "erasing", "autoimg", "autosvhn", "none"], 
+                                                                      help="String value indicating transforms to use")
+    parser.add_argument('--seed', type=int, default=None, help='seed for initialization')
+    parser.add_argument('--cutmix', default=False, type=bool)
     # parser.add_argument('--lr_scheduler_type', type=str, default='cosine', choices=('step','cosine'), help='type of the scheduler')
     # parser.add_argument('--lr_decay_schedule', type=str, help='learning rate decaying schedule (for step)')
 
@@ -186,6 +192,16 @@ def main():
 
     print("\nCUDNN VERSION: {}\n".format(torch.backends.cudnn.version()))
 
+    # if args.seed is not None:
+    #     print("The seed number is set to", args.seed)
+    #     logging.info("The seed number is set to {}".format(args.seed))
+    #     torch.manual_seed(args.seed)
+    #     torch.cuda.manual_seed(args.seed)
+    #     torch.cuda.manual_seed_all(args.seed)
+    #     np.random.seed(args.seed)
+    #     random.seed(args.seed)
+    #     torch.backends.cudnn.deterministic=True
+
     cudnn.benchmark = True
     if args.deterministic:
         cudnn.benchmark = False
@@ -211,9 +227,12 @@ def main():
     data_name = args.data[0].split("/")[-1]
     if data_name == "tiny-imagenet-200" or data_name == "imagenet_data":
         train_loader, val_loader = imagenet_data_loader(args)
-        train_loader_len = int(math.ceil(train_loader._size / args.batch_size))
-        val_loader_len = int(val_loader._size / args.batch_size)
-        data_loader_type = "dali"
+        train_loader_len = int(math.ceil(len(train_loader.dataset) / args.batch_size))
+        # train_loader_len = int(math.ceil(train_loader._size / args.batch_size))
+        # val_loader_len = int(val_loader._size / args.batch_size)
+        val_loader_len = int(len(val_loader.dataset) / args.batch_size)
+        # data_loader_type = "dali"
+        data_loader_type = "pytorch"
     else:
         raise NotImplementedError
     printRed(f"Data name is: {data_name}, data path is: {args.data}, length of train_loader: {train_loader_len}, length of val_loader_len: {val_loader_len}")
@@ -224,6 +243,7 @@ def main():
     data_name = args.data[0].split("/")[-1]
     assert data_name in num_classes_dict.keys()
     num_classes = num_classes_dict[data_name]
+    args.num_classes = num_classes
     printRed(f"Dataset path is: {args.data}, num of classes is: {num_classes}")
     
 
@@ -281,7 +301,7 @@ def main():
     if args.quant:
         # model = prepare_by_platform(model, BackendType.Tensorrt)
         extra_config = get_extra_config()
-        model = prepare_by_platform(model, BackendType.Academic, extra_config, backward_method=args.backward_method)
+        model = prepare_by_platform(model, BackendType.Academic, extra_config)
         printRed(extra_config)
     else:
         printRed("Do not quantize, train the original model")
@@ -380,7 +400,10 @@ def main():
     data_name = args.data[0].split("/")[-1]
     if data_name == "imagenet_data" or data_name == "tiny-imagenet-200":
         label_smooth = 0.1
-        criterion = LabelSmoothCELoss(label_smooth, num_classes).cuda()
+        if args.cutmix:
+            criterion = nn.CrossEntropyLoss().cuda()
+        else:
+            criterion = LabelSmoothCELoss(label_smooth, num_classes).cuda()
     elif data_name == "cifar10" or data_name == "cifar100":
         criterion = nn.CrossEntropyLoss().cuda()
     else:
@@ -448,7 +471,7 @@ def main():
         else:
             avg_train_time = train(train_loader, model, criterion, optimizer, epoch, lr_scheduler, train_loader_len, data_loader_type, 
                                     val_loader, val_loader_len, # for evaluate test acc
-                                    tb_logger) # for cosine
+                                    tb_logger, use_cutmix=args.cutmix) # for cosine
         # scheduler.step()
         total_time.update(avg_train_time)
         if args.test:
@@ -492,7 +515,8 @@ def main():
 
 def train(train_loader, model, criterion, optimizer, epoch, lr_scheduler, train_loader_len, data_loader_type, 
             val_loader, val_loader_len,
-            tb_logger=None):
+            tb_logger=None,
+            use_cutmix=False):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
@@ -501,7 +525,7 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_scheduler, train_
     # switch to train mode
     model.train()
     end = time.time()
-    
+    cutmix = v2.CutMix(num_classes=args.num_classes)
     # lr_scheduler = init_lr_scheduler(optimizer)
 
     for i, data in enumerate(train_loader):
@@ -513,6 +537,8 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_scheduler, train_
             input, target = data
             input = input.cuda()
             target = target.cuda()
+            if use_cutmix:
+                input, target = cutmix(input, target)
         else:
             NotImplementedError
 
@@ -578,9 +604,11 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_scheduler, train_
             # iteration, since they incur an allreduce and some host<->device syncs.
 
             # Measure accuracy
-            prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+            if use_cutmix:
+                prec1, prec5 = [0.0], [0.0] # Undefined
+            else:
+                prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
 
-            # Average loss and accuracy across processes for logging
             if args.distributed:
                 reduced_loss = reduce_tensor(loss.data)
                 prec1 = reduce_tensor(prec1)

@@ -6,7 +6,7 @@ from typing import List
 import torch
 from torch.fx import GraphModule
 from torch.quantization import propagate_qconfig_
-from torch.quantization.fx.qconfig_utils import get_flattened_qconfig_dict
+from mqbench.quantization.qconfig_mapping_utils import get_flattened_qconfig_dict
 
 from mqbench.utils import is_symmetric_quant, getitem2node
 from mqbench.utils.logger import logger
@@ -25,33 +25,26 @@ class AcademicQuantizer(ModelQuantizer):
         self.io_module = {}
         self.post_act_8bit_node_name = []
 
-    def prepare(self, model: GraphModule, qconfig):
+    def prepare(self, model: GraphModule, qconfig, is_qat, backend_config, freeze_bn):
         self._get_io_module(model)
         self._get_post_act_8bit_node_name(model)
-        model = self._weight_quant(model, qconfig)
+        model = self._weight_quant(model, qconfig, backend_config, freeze_bn)
         model = self._insert_fake_quantize_for_act_quant(model, qconfig)
         return model
 
-    def _weight_quant(self, model: GraphModule, qconfig):
+    def _weight_quant(self, model: GraphModule, qconfig, backend_config, freeze_bn):
         logger.info("Replace module to qat module.")
         wqconfig_8bit = copy.deepcopy(qconfig)
         wq_symmetry = True if is_symmetric_quant(qconfig.weight.p.keywords['qscheme']) else False
-        # org
-        # wqconfig_8bit.weight.p.keywords['quant_min'] = -2 ** (8 - 1) if wq_symmetry else 0
-        # wqconfig_8bit.weight.p.keywords['quant_max'] = 2 ** (8 - 1) - 1 if wq_symmetry else 2 ** 8 - 1
-        # new
-        bit = 32
-        wqconfig_8bit.weight.p.keywords['quant_min'] = -2 ** (bit - 1) if wq_symmetry else 0
-        wqconfig_8bit.weight.p.keywords['quant_max'] = 2 ** (bit - 1) - 1 if wq_symmetry else 2 ** bit - 1
-
+        wqconfig_8bit.weight.p.keywords['quant_min'] = -2 ** (8 - 1) if wq_symmetry else 0
+        wqconfig_8bit.weight.p.keywords['quant_max'] = 2 ** (8 - 1) - 1 if wq_symmetry else 2 ** 8 - 1
         for name, module in model.named_modules():
             if name in self.io_module.keys():
-                # logger.info("Set layer {} to 8 bit.".format(name)) # org
-                logger.info(f"Set layer {name} to {bit} bit.") # new
+                logger.info("Set layer {} to 8 bit.".format(name))
                 module.qconfig = wqconfig_8bit
         flattened_qconfig_dict = get_flattened_qconfig_dict({'': qconfig})
         propagate_qconfig_(model, flattened_qconfig_dict)
-        self._qat_swap_modules(model, self.additional_qat_module_mapping)
+        self._qat_swap_modules(model, self.additional_qat_module_mapping, backend_config, freeze_bn)
         return model
 
     @property
@@ -128,19 +121,11 @@ class AcademicQuantizer(ModelQuantizer):
 
         aqconfig_8bit = copy.deepcopy(qconfig.activation)
         aq_symmetry = True if is_symmetric_quant(qconfig.activation.p.keywords['qscheme']) else False
-        
-        # org
-        # aqconfig_8bit.p.keywords['quant_min'] = -2 ** (8 - 1) if aq_symmetry else 0
-        # aqconfig_8bit.p.keywords['quant_max'] = 2 ** (8 - 1) - 1 if aq_symmetry else 2 ** 8 - 1
-        # new
-        bit = 32
-        aqconfig_8bit.p.keywords['quant_min'] = -2 ** (bit - 1) if aq_symmetry else 0
-        aqconfig_8bit.p.keywords['quant_max'] = 2 ** (bit - 1) - 1 if aq_symmetry else 2 ** bit - 1
-
+        aqconfig_8bit.p.keywords['quant_min'] = -2 ** (8 - 1) if aq_symmetry else 0
+        aqconfig_8bit.p.keywords['quant_max'] = 2 ** (8 - 1) - 1 if aq_symmetry else 2 ** 8 - 1
         for node in node_to_quantize_output:
             if node.name in self.post_act_8bit_node_name:
-                # logger.info("Set {} post act quantize to 8 bit.".format(node.name)) # org
-                logger.info("Set {} post act quantize to {} bit.".format(node.name, bit)) # new
+                logger.info("Set {} post act quantize to 8 bit.".format(node.name))
                 fake_quantizer = aqconfig_8bit()
             else:
                 fake_quantizer = qconfig.activation()

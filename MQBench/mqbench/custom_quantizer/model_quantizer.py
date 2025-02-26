@@ -23,20 +23,26 @@ from torch.quantization.quantization_mappings import (
 from torch.quantization.utils import (
     get_combined_dict
 )
-from torch.quantization.fx.qconfig_utils import (
-    get_flattened_qconfig_dict
-)
+from mqbench.quantization.qconfig_mapping_utils import get_flattened_qconfig_dict
 from torch.quantization.quantize_fx import (
     _fuse_fx
 )
 
+from mqbench.utils import getitem2node
 from mqbench.utils.logger import logger
 from mqbench.utils.registry import register_model_quantizer
 from mqbench.prepare_by_platform import BackendType
-
+from torch.ao.quantization.backend_config import (
+    BackendConfig,
+)
+from torch.ao.quantization.backend_config.utils import (
+    get_module_to_qat_module,
+)
+from mqbench.fake_quantize.lsq import LearnableFakeQuantize
 
 @register_model_quantizer(BackendType.Tensorrt)
 @register_model_quantizer(BackendType.NNIE)
+@register_model_quantizer(BackendType.QDQ)
 class ModelQuantizer(object):
     """General model quantizer class.
     First, replace common float module to nn.qat.modules to make weight fake
@@ -59,9 +65,9 @@ class ModelQuantizer(object):
         self.exclude_node_name = extra_quantizer_dict.get('exclude_node_name', [])
         self.extra_fuse_dict = extra_fuse_dict
 
-    def prepare(self, model: GraphModule, qconfig):
-        model = _fuse_fx(model, self.extra_fuse_dict)
-        model = self._weight_quant(model, qconfig)
+    def prepare(self, model: GraphModule, qconfig, is_qat, backend_config, freeze_bn):
+        model = _fuse_fx(model, is_qat, self.extra_fuse_dict, backend_config)
+        model = self._weight_quant(model, qconfig, backend_config, freeze_bn)
         model = self._insert_fake_quantize_for_act_quant(model, qconfig)
         return model
 
@@ -118,11 +124,11 @@ class ModelQuantizer(object):
         else:
             raise NotImplementedError('{} can not be handled now.'.format(type(args)))
 
-    def _weight_quant(self, model: GraphModule, qconfig):
+    def _weight_quant(self, model: GraphModule, qconfig, backend_config, freeze_bn):
         logger.info("Replace module to qat module.")
         flattened_qconfig_dict = get_flattened_qconfig_dict({'': qconfig})
         propagate_qconfig_(model, flattened_qconfig_dict)
-        self._qat_swap_modules(model, self.additional_qat_module_mapping)
+        self._qat_swap_modules(model, self.additional_qat_module_mapping, backend_config, freeze_bn)
         return model
 
     @property
@@ -144,10 +150,10 @@ class ModelQuantizer(object):
         if (node.op == "call_module" and type(modules[node.target]) == cur_pattern) or \
                 ((node.op == 'call_function' or node.op == 'call_method') and
                     node.target == cur_pattern):
-            # Means compairing pair.
+            # Means comparing pair.
             if len(pattern) > p_pos and len(pair) > v_pos:
                 return self._on_merge_chain(modules, pattern, pair, p_pos + 1, v_pos + 1)
-            # Means compairing extra node.
+            # Means comparing extra node.
             matched = False
             flatten_args = self._flatten_args(node.args)
             for _arg in flatten_args:
@@ -220,6 +226,7 @@ class ModelQuantizer(object):
         nodes = list(model.graph.nodes)
         modules = dict(model.named_modules())
         node_need_to_quantize_output = []
+        g2node = getitem2node(model)
         for node in nodes:
             if ((node.op == "call_module" and node.target in self.exclude_module_name) or
                 ((node.op == 'call_function' or node.op == 'call_method') and
@@ -231,25 +238,30 @@ class ModelQuantizer(object):
                 ((node.op == 'call_function' or node.op == 'call_method') and
                     node.target in self.function_type_to_quant_input) or node.name in self.additional_node_name:
                 input_node_list = self._flatten_args(node.args)
-                # Means this is not Tensor + Tensor.
-                if not all([isinstance(_node, torch.fx.node.Node) for _node in input_node_list]):
-                    continue
+                input_node_list = [_node for _node in input_node_list if isinstance(_node, torch.fx.node.Node)]
                 for _node in input_node_list:
                     if self._is_implicit_merge(modules, (node, _node)):
                         logger.info("Implicit merge: {} + {}".format(_node.name, node.name))
                         continue
+                    if _node in node_need_to_quantize_output:
+                        continue
+                    if _node in g2node:
+                        _node = g2node[_node]
                     node_need_to_quantize_output.append(_node)
         return node_need_to_quantize_output
 
-    def _qat_swap_modules(self, root: GraphModule, additional_qat_module_mapping: Dict[Callable, Callable]):
+    def _qat_swap_modules(self, root: GraphModule, additional_qat_module_mapping: Dict[Callable, Callable], backend_config: BackendConfig, freeze_bn: bool):
+        # all_mappings = get_combined_dict(
+        #     get_default_qat_module_mappings(), additional_qat_module_mapping)
         all_mappings = get_combined_dict(
-            get_default_qat_module_mappings(), additional_qat_module_mapping)
-        root = self._convert(root, all_mappings, inplace=True)
+             get_module_to_qat_module(backend_config), additional_qat_module_mapping)
+        root = self._convert(root, all_mappings, inplace=True, backend_config = backend_config, freeze_bn=freeze_bn)
         return root
 
-    def _convert(self, module, mapping=None, inplace=False, scope=''):
+    def _convert(self, module, mapping=None, inplace=False, backend_config=None, freeze_bn=True, scope=''):
         if mapping is None:
-            mapping = get_default_static_quant_module_mappings()
+            # mapping = get_default_static_quant_module_mappings()
+            mapping = get_module_to_qat_module(backend_config)
 
         if not inplace:
             module = copy.deepcopy(module)
@@ -261,8 +273,25 @@ class ModelQuantizer(object):
                 logger.info("Skip quant layer: " + new_scope)
                 continue
             if not isinstance(mod, _FusedModule):
-                self._convert(mod, mapping, True, new_scope)
-            reassign[name] = swap_module(mod, mapping, {})
+                self._convert(mod, mapping, True, new_scope, freeze_bn= freeze_bn)
+            reassign[name] = swap_module(mod, mapping, {}, False)
+            if freeze_bn:
+                if (hasattr(reassign[name], 'freeze_bn')):
+                    reassign[name].freeze_bn_stats()
+            if (
+                getattr(reassign[name].qconfig.weight.p, 'func', None) is LearnableFakeQuantize  
+                and reassign[name].qconfig.weight.p.keywords['ch_axis'] != -1
+                and hasattr(reassign[name], 'weight_fake_quant')
+            ):  
+                channels_len = -2
+                if hasattr(reassign[name], 'out_channels'):
+                    channels_len = reassign[name].out_channels
+                if hasattr(reassign[name], 'out_features'):
+                    channels_len = reassign[name].out_features
+                assert channels_len != -2, "Can not find out_channels or out_features"
+                reassign[name].weight_fake_quant.scale = torch.nn.Parameter(torch.tensor([1.] * channels_len))
+                reassign[name].weight_fake_quant.zero_point = torch.nn.Parameter(torch.tensor([0.] * channels_len))
+
         for key, value in reassign.items():
             module._modules[key] = value
 

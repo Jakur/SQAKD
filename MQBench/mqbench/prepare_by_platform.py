@@ -9,8 +9,7 @@ from torch.fx import Tracer
 from torch.fx.graph_module import GraphModule
 from torch.quantization.quantize_fx import _swap_ff_with_fxff
 from torch.quantization import QConfig
-
-import sys
+from mqbench.fuser_method_mappings import _get_custom_conv_configs
 
 from mqbench.fake_quantize import (
     LearnableFakeQuantize,
@@ -22,7 +21,6 @@ from mqbench.fake_quantize import (
     TqtFakeQuantize,
     AdaRoundFakeQuantize,
     QDropFakeQuantize,
-    AltOptFakeQuantize,
 )
 from mqbench.observer import (
     ClipStdObserver,
@@ -34,15 +32,26 @@ from mqbench.observer import (
     EMAQuantileObserver,
     MSEObserver,
     EMAMSEObserver,
-    AltOptObserver,
 )
-from mqbench.fuser_method_mappings import fuse_custom_config_dict
+# from mqbench.fuser_method_mappings import fuse_custom_config_dict
 from mqbench.utils.logger import logger
 from mqbench.utils.registry import DEFAULT_MODEL_QUANTIZER
 from mqbench.scheme import QuantizeScheme
-
+from torch.ao.quantization.backend_config import (
+    BackendConfig,
+    get_native_backend_config,
+get_tensorrt_backend_config,
+DTypeConfig
+)
+from torch.ao.quantization.backend_config.native import weighted_op_quint8_dtype_config
 __all__ = ['prepare_by_platform']
 
+weighted_op_qint8_dtype_config = DTypeConfig(
+    input_dtype=torch.qint8,
+    output_dtype=torch.qint8,
+    weight_dtype=torch.qint8,
+    bias_dtype=torch.float,
+)
 class BackendType(Enum):
     Academic = 'Academic'
     Tensorrt = 'Tensorrt'
@@ -56,6 +65,8 @@ class BackendType(Enum):
     Tengine_u8 = "Tengine_u8"
     Tensorrt_NLP = "Tensorrt_NLP"
     Academic_NLP = "Academic_NLP"
+    STPU = "STPU"
+    QDQ = "QDQ"
 
 
 ParamsTable = {
@@ -124,6 +135,22 @@ ParamsTable = {
                                  default_act_quantize=LearnableFakeQuantize,
                                  default_weight_observer=MinMaxObserver,
                                  default_act_observer=EMAMinMaxObserver),
+    BackendType.STPU: dict(qtype="affine",
+                                 w_qscheme=QuantizeScheme(symmetry=True, per_channel=False, pot_scale=False, bit=8, symmetric_range=True),
+                                 a_qscheme=QuantizeScheme(symmetry=True, per_channel=False, pot_scale=False, bit=8, symmetric_range=True),
+                                 default_weight_quantize=FixedFakeQuantize,
+                                 default_act_quantize=FixedFakeQuantize,
+                                 default_weight_observer=MinMaxObserver,
+                                 default_act_observer=EMAMinMaxObserver),
+    BackendType.QDQ: dict(qtype='affine',  # noqa: E241
+                               w_qscheme=QuantizeScheme(symmetry=True, per_channel=True, pot_scale=False, bit=8,
+                                                        symmetric_range=True),
+                               a_qscheme=QuantizeScheme(symmetry=True, per_channel=False, pot_scale=False, bit=8,
+                                                        symmetric_range=True),
+                               default_weight_quantize=LearnableFakeQuantize,
+                               default_act_quantize=LearnableFakeQuantize,
+                               default_weight_observer=MinMaxObserver,
+                               default_act_observer=EMAMinMaxObserver),
 }
 ParamsTable[BackendType.Tensorrt_NLP] = ParamsTable[BackendType.Tensorrt]
 ParamsTable[BackendType.Academic_NLP] = ParamsTable[BackendType.Academic]
@@ -138,7 +165,6 @@ ObserverDict = {
     'LSQObserver':              LSQObserver,              # Usually used for LSQ.  # noqa: E241
     'MSEObserver':              MSEObserver,                                       # noqa: E241
     'EMAMSEObserver':           EMAMSEObserver,                                    # noqa: E241
-    'AltOptObserver':           AltOptObserver,
 }
 
 FakeQuantizeDict = {
@@ -151,11 +177,10 @@ FakeQuantizeDict = {
     'TqtFakeQuantize':       TqtFakeQuantize,        # TQT                          # noqa: E241
     'AdaRoundFakeQuantize':  AdaRoundFakeQuantize,   # AdaRound                     # noqa: E241
     'QDropFakeQuantize':     QDropFakeQuantize,      # BRECQ & QDrop                # noqa: E241
-    'AltOptFaekQuantize':    AltOptFakeQuantize,
 }
 
 
-def get_qconfig_by_platform(deploy_backend: BackendType, extra_qparams: Dict, backward_method=None):
+def get_qconfig_by_platform(deploy_backend: BackendType, extra_qparams: Dict):
     """
 
     Args:
@@ -255,8 +280,8 @@ def get_qconfig_by_platform(deploy_backend: BackendType, extra_qparams: Dict, ba
 
     # Create qconfig.
     # here, rewrited by with_args
-    w_qconfig = w_fakequantize.with_args(observer=w_observer, backward_method=backward_method, **w_fakeq_params, **w_qscheme.to_observer_params())
-    a_qconfig = a_fakequantize.with_args(observer=a_observer, backward_method=backward_method, **a_fakeq_params, **a_qscheme.to_observer_params())
+    w_qconfig = w_fakequantize.with_args(observer=w_observer, **w_fakeq_params, **w_qscheme.to_observer_params())
+    a_qconfig = a_fakequantize.with_args(observer=a_observer, **a_fakeq_params, **a_qscheme.to_observer_params())
     logger.info('Weight Qconfig:\n    FakeQuantize: {} Params: {}\n'
                 '    Oberver:      {} Params: {}'.format(w_fakequantize.__name__, w_fakeq_params,
                                                          w_observer.__name__, str(w_qscheme)))
@@ -265,13 +290,7 @@ def get_qconfig_by_platform(deploy_backend: BackendType, extra_qparams: Dict, ba
                                                          a_observer.__name__, str(a_qscheme)))
     if backend_params['qtype'] == 'vitis':
         logger.info('Bias Qconfig:\n    TqtFakeQuantize with MinMaxObserver')
-    
-    # print(f"w_fakeq_params: {w_fakeq_params}, w_qscheme: {w_qscheme}")
-    # print(f"a_fakeq_params: {a_fakeq_params}, a_qscheme: {a_qscheme}")
-    # print("3", w_observer, a_observer)
-    # print("4", w_fakequantize)
-    # print("5", a_fakequantize)
-    # sys.exit()
+
     return QConfig(activation=a_qconfig, weight=w_qconfig)
 
 
@@ -346,7 +365,8 @@ def prepare_by_platform(
         deploy_backend: BackendType,
         prepare_custom_config_dict: Dict[str, Any] = {},
         custom_tracer: Tracer = None,
-        backward_method = None):
+        is_qat: bool = True,
+        freeze_bn: bool = True):
     """
     Args:
         model (torch.nn.Module):
@@ -365,14 +385,14 @@ def prepare_by_platform(
         }
 
     """
-    print("==========================> Inside prepare_by_platform, set up quantization <====================================")
     model_mode = 'Training' if model.training else 'Eval'
     logger.info("Quantize model Scheme: {} Mode: {}".format(deploy_backend, model_mode))
 
     # Get Qconfig
     extra_qconfig_dict = prepare_custom_config_dict.get('extra_qconfig_dict', {})
-    qconfig = get_qconfig_by_platform(deploy_backend, extra_qconfig_dict, backward_method) # new
-
+    qconfig = get_qconfig_by_platform(deploy_backend, extra_qconfig_dict)
+    backend_config = get_native_backend_config()
+    backend_config.set_backend_pattern_configs(_get_custom_conv_configs(weighted_op_qint8_dtype_config))
     _swap_ff_with_fxff(model)
     # Preserve attr.
     preserve_attr_dict = dict()
@@ -401,12 +421,12 @@ def prepare_by_platform(
     graph_module = GraphModule(modules, graph, name)
     # Model fusion.
     extra_fuse_dict = prepare_custom_config_dict.get('extra_fuse_dict', {})
-    extra_fuse_dict.update(fuse_custom_config_dict)
+    # extra_fuse_dict.update(fuse_custom_config_dict)
     # Prepare
     import mqbench.custom_quantizer  # noqa: F401
     extra_quantizer_dict = prepare_custom_config_dict.get('extra_quantizer_dict', {})
     quantizer = DEFAULT_MODEL_QUANTIZER[deploy_backend](extra_quantizer_dict, extra_fuse_dict)
-    prepared = quantizer.prepare(graph_module, qconfig)
+    prepared = quantizer.prepare(graph_module, qconfig, is_qat, backend_config, freeze_bn)
     # Restore attr.
     if 'preserve_attr' in prepare_custom_config_dict:
         for submodule_name in prepare_custom_config_dict['preserve_attr']:

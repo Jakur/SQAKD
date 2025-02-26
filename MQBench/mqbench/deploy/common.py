@@ -39,6 +39,8 @@ class ONNXGraph(object):
 
     def set_initializer(self, initializer_name, value_tensor, raw=True):
         idx = None
+        if value_tensor.shape == () and value_tensor.size == 1:
+            value_tensor.shape = 1
         if initializer_name in self.initializer:
             idx = self.initializer[initializer_name][1]
         if raw:
@@ -93,7 +95,7 @@ class ONNXGraph(object):
 
     def del_initializer(self, initializer_name):
         if initializer_name in self.initializer:
-            del(self.initializer[initializer_name])
+            del self.initializer[initializer_name]
 
     def optimize_model(self):
         # Delete redundant nodes.
@@ -217,12 +219,33 @@ def prepare_data(graph):
                     params[node.output[0]] = numpy_helper.to_array(attr.t)
     return params
 
+def prepare_data_nnie(graph):
+    params = {}
+    for init in graph.initializer:
+        params[init.name] = numpy_helper.to_array(init)
+    for node in graph.node:
+        if node.op_type == "Constant":
+            for attr in node.attribute:
+                if attr.name == "value":
+                    params[node.output[0]] = numpy_helper.to_array(attr.t)
+        elif node.op_type == "QuantizeLinear":
+            for attr in node.attribute:
+                if attr.name == "data_max":
+                    params[node.output[0]] = attr.f
+    return params
 
 def prepare_initializer(graph):
     named_initializer = {}
     for init in graph.initializer:
         named_initializer[init.name] = init
     return named_initializer
+
+
+def insert_initializer(graph, new_init):
+    for init in graph.initializer:
+        if init.name == new_init.name:
+            graph.initializer.remove(init)
+    graph.initializer.append(new_init)
 
 
 def parse_attrs(node_attrs):

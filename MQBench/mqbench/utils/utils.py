@@ -132,7 +132,14 @@ def getitem2node(model: GraphModule) -> dict:
         elif node.target == 'update':
             if node.args[0] not in original_key_dict:
                 original_key_dict[node.args[0]] = {}
-            original_key_dict[node.args[0]].update(node.args[1])
+            if isinstance(node.args[1], dict):
+                original_key_dict[node.args[0]].update(node.args[1])
+            elif isinstance(node.args[1], torch.fx.node.Node):
+                original_key_dict[node.args[0]].update(original_key_dict[node.args[1]])
+            else:
+                raise ValueError('Wrong type for update')
+
+
     return getitem2node
 
 
@@ -170,16 +177,3 @@ def topology_order(model):
     for idx, node in enumerate(model.graph.nodes):
         node2idx[node] = idx 
     return node2idx
-
-def get_altopt_config():
-    
-    return {
-        
-        "quantype": "alt_opt",                       #["alt_opt", "DoReFa", "SAWB"]
-        "alt_opt": True,                            # whether we apply alt_opt
-        "condition": "loss",                        # use loss or tolerence as condition for while loop
-        "rounds": 500,                                # how many rounds of alt_opt
-        "regions_0": 300,                           # how many regions for loss function
-        "num_blocks": 50,
-        "sample_data": False,
-    }

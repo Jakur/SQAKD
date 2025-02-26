@@ -4,7 +4,12 @@ from torch.nn.parameter import Parameter
 from mqbench.fake_quantize.quantize_base import QuantizeBase
 from mqbench.utils import is_symmetric_quant, is_tracing_state
 from mqbench.utils.hook import PerChannelLoadHook
-
+from torch.onnx import (
+    _type_utils,
+    symbolic_helper,
+    symbolic_opset9 as opset9,
+)
+import torch._C._onnx as _C_onnx
 
 class LearnableFakeQuantize(QuantizeBase):
     r""" This is an extension of the FakeQuantize module in fake_quantize.py, which
@@ -15,8 +20,7 @@ class LearnableFakeQuantize(QuantizeBase):
     module also includes the following attributes to support quantization parameter learning.
     """
 
-    # def __init__(self, observer, scale=1., zero_point=0., use_grad_scaling=True, **observer_kwargs): # org
-    def __init__(self, observer, backward_method=None, scale=1., zero_point=0., use_grad_scaling=True, **observer_kwargs): # new
+    def __init__(self, observer, scale=1., zero_point=0., use_grad_scaling=True, **observer_kwargs):
         super(LearnableFakeQuantize, self).__init__(observer, **observer_kwargs)
         self.use_grad_scaling = use_grad_scaling
         self.scale = Parameter(torch.tensor([scale]))
@@ -65,22 +69,21 @@ class LearnableFakeQuantize(QuantizeBase):
                     grad_factor = 1.0 / (X.numel() / X.shape[self.ch_axis] * self.quant_max) ** 0.5
                 else:
                     grad_factor = 1.0
-                if is_tracing_state():
-                    X = X.float() # new
-                    X = FakeQuantizeLearnablePerchannelAffine.apply(
-                        X, self.scale, self.zero_point, self.ch_axis,
+                X = torch._fake_quantize_learnable_per_channel_affine(X, self.scale, self.zero_point, self.ch_axis,
                         self.quant_min, self.quant_max, grad_factor)
-                else:
-                    X = X.float() # new
-                    X = _fake_quantize_learnable_per_channel_affine_training(
-                        X, self.scale, self.zero_point, self.ch_axis,
-                        self.quant_min, self.quant_max, grad_factor)
+                # if is_tracing_state():
+                #     X = FakeQuantizeLearnablePerchannelAffine.apply(
+                #         X, self.scale, self.zero_point, self.ch_axis,
+                #         self.quant_min, self.quant_max, grad_factor)
+                # else:
+                #     X = _fake_quantize_learnable_per_channel_affine_training(
+                #         X, self.scale, self.zero_point, self.ch_axis,
+                #         self.quant_min, self.quant_max, grad_factor)
             else:
                 if self.use_grad_scaling:
                     grad_factor = 1.0 / (X.numel() * self.quant_max) ** 0.5
                 else:
                     grad_factor = 1.0
-                X = X.float() # new
                 X = torch._fake_quantize_learnable_per_tensor_affine(
                     X, self.scale, self.zero_point,
                     self.quant_min, self.quant_max, grad_factor)
@@ -103,12 +106,24 @@ def grad_scale(t, scale):
     return (t - (t * scale)).detach() + (t * scale)
 
 
-class FakeQuantizeLearnablePerchannelAffine(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, scale, zero_point, ch_axis, quant_min, quant_max, grad_factor):
-        return _fake_quantize_learnable_per_channel_affine_training(x, scale, zero_point, ch_axis,
-                                                                    quant_min, quant_max, grad_factor)
-
-    @staticmethod
-    def symbolic(g, x, scale, zero_point, ch_axis, quant_min, quant_max, grad_factor):
-        return g.op("::FakeQuantizeLearnablePerchannelAffine", x, scale, zero_point, quant_min_i=quant_min, quant_max_i=quant_max)
+# class FakeQuantizeLearnablePerchannelAffine(torch.autograd.Function):
+#     @staticmethod
+#     def forward(ctx, x, scale, zero_point, ch_axis, quant_min, quant_max, grad_factor):
+#         return _fake_quantize_learnable_per_channel_affine_training(x, scale, zero_point, ch_axis,
+#                                                                     quant_min, quant_max, grad_factor)
+#
+#     @staticmethod
+#     def symbolic(g, inputs, scale, zero_point, ch_axis, quant_min, quant_max, grad_factor):
+#         if quant_min == 0:
+#             zero_point = g.op("Cast", zero_point, to_i=_C_onnx.TensorProtoDataType.UINT8)
+#         else:
+#             zero_point = g.op("Cast", zero_point, to_i=_C_onnx.TensorProtoDataType.INT8)
+#         quantized = g.op("QuantizeLinear", inputs, scale, zero_point, axis_i=ch_axis)
+#         if (quant_min, quant_max) == (0, 127):
+#             quantized = g.op(
+#                 "Clip",
+#                 quantized,
+#                 opset9.unused(g),
+#                 g.op("Constant", value_t=torch.tensor(127, dtype=torch.uint8)),
+#             )
+#         return g.op("DequantizeLinear", quantized, scale, zero_point, axis_i=ch_axis)
