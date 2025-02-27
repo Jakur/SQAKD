@@ -89,6 +89,8 @@ def parse():
     parser.add_argument('--channels-last', type=bool, default=False)
     parser.add_argument('-t', '--test', action='store_true', help='Launch test mode with preset arguments')
     parser.add_argument('--not-quant', action='store_true')
+    parser.add_argument('--quantization', type=str, choices=["pact", "dorefa", "lsq"], default="dorefa")
+    parser.add_argument('--bits', type=int, default=4)
 
     parser.add_argument('--save_root_path', type=str)
     parser.add_argument('--backward_method', type=str, choices=["org","STE","EWGS","Uscheduler","Uscheduler_Pscheduler"])
@@ -151,8 +153,9 @@ def main():
     # logger.info(f'config: {pprint.pformat(get_config())}')
     settings = vars(args)
     outfile = os.path.join(root_path, 'log.txt')
+    extra_config = get_extra_config(args.quantization, args.bits)
     with open(outfile, 'w') as convert_file:
-        convert_file.write(f'Quantization config: \n{pprint.pformat(get_extra_config())}\n')
+        convert_file.write(f'Quantization config: \n{pprint.pformat(extra_config)}\n')
         convert_file.write(f'Training config: \n{pprint.pformat(settings)}')
         # convert_file.write('json_stats: ' + json.dumps(vars(args)) + '\n')
     f = open(outfile, 'a+')
@@ -300,7 +303,6 @@ def main():
 
     if args.quant:
         # model = prepare_by_platform(model, BackendType.Tensorrt)
-        extra_config = get_extra_config()
         model = prepare_by_platform(model, BackendType.Academic, extra_config)
         printRed(extra_config)
     else:

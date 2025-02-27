@@ -150,6 +150,7 @@ class HFDataset(Dataset):
         label = self.ds[index]["label"]
         img = self.transform(img)
         return img, label
+    
 
 def build_train_transform(name):
     if isinstance(name, str):
@@ -176,9 +177,30 @@ def build_train_transform(name):
     return get_general_transform(trans)
 
 
-def imagenet_data_loader(args):
-    train_ds = HFDataset(datasets.load_dataset("zh-plus/tiny-imagenet", split="train"), build_train_transform(args.transform))
+class HFDatasetMulti(Dataset):
+    def __init__(self, ds, transform):
+        super().__init__()
+        self.ds = ds
+        self.transform = transform
+        self.basic_transform = build_train_transform("none")
+
+    def __len__(self):
+        return len(self.ds)
+    
+    def __getitem__(self, index):
+        img_raw = self.ds[index]["image"]
+        label = self.ds[index]["label"]
+        img = self.transform(img_raw)
+        img2 = self.basic_transform(img_raw)
+        return img, img2, label
+
+def imagenet_data_loader(args, multi=False):
+    train_ds = datasets.load_dataset("zh-plus/tiny-imagenet", split="train")
     val_ds = HFDataset(datasets.load_dataset("zh-plus/tiny-imagenet", split="valid"), get_val_transform())
+    if multi:
+        train_ds = HFDatasetMulti(train_ds, build_train_transform(args.transform))
+    else:
+        train_ds = HFDataset(train_ds, build_train_transform(args.transform))
 
     train_loader = DataLoader(train_ds, args.batch_size, shuffle=True, num_workers=args.workers)
     val_loader = DataLoader(val_ds, args.batch_size, shuffle=False, num_workers=args.workers)

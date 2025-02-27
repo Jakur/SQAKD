@@ -34,7 +34,8 @@ from typing import Dict, List, Optional, Tuple
 import torch
 from torchvision.transforms import v2
 from torch import Tensor
-from torchvision.transforms import InterpolationMode, functional as F
+from torchvision.transforms import InterpolationMode
+import torchvision.transforms.functional as F
 
 
 def _apply_op(
@@ -416,33 +417,72 @@ def main():
                 cmi(pred, labels)
         cmi.update_centroids()
         return cmi 
-        
+    
+    class VarOpt():
+        def __init__(self):
+            self.prob = []
+            self.entropy = []
+            self.all_avg_prob = []
+            self.epoch = 0
+            self.total_step = 0
+
+    
+    def check_variance(opt, logit_t):
+        # Check teacher's avg probability, Neurips'22
+        p = torch.nn.functional.softmax(logit_t, dim=-1)
+        opt.prob += [p] # [batch_size, num_classes]
+        opt.entropy += [(-p * torch.log(p)).sum(dim=-1)] # [batch_size]
+        # if opt.lw_mix is not None:
+        #     p = F.softmax(input_mix_logit_t, dim=-1)
+        #     opt.prob += [p] # [batch_size, num_classes]
+        #     opt.entropy += [(-p * torch.log(p)).sum(dim=-1)] # [batch_size]
+        # num = 5 if opt.lw_mix is None else 10 # 10 is empirically set
+        num = 5
+        if len(opt.prob) >= num: 
+            prob = torch.cat(opt.prob, dim=0) # [..., num_classes]
+            entropy = torch.cat(opt.entropy, dim=0)
+            avg_prob = prob.mean(dim=0) # [num_classes]
+            opt.all_avg_prob += [avg_prob]
+            opt.prob = [] # reset 
+
+            all_avg_prob = torch.stack(opt.all_avg_prob, dim=0) # [Num, num_classes]
+            avg_prob_std = all_avg_prob.std(dim=0)
+            # std_str = ' '.join(['%.6f' % x for x in tensor2list(avg_prob_std)])
+            std_str = '%.6f' % avg_prob_std.mean().item()
+            # print(f'Check T prob: NumOfSampledStd {len(opt.all_avg_prob)} Epoch {opt.epoch} Step {idx} TotalStep {opt.total_step} MeanStd {std_str} MeanEntropy {entropy.mean().item():.6f}')
+            return std_str
+        return None
+    
+    def compute_variance_loop(aug_loader, normal_loader, use_cutmix=False):
+        NUM_EPOCHS = 10
+        cutmix = v2.CutMix(num_classes=args.num_classes)
+        opt = VarOpt()
+        var_str = None
+        # train_loader, _ = get_loaders(test_transform) # First pass
+        for ep in range(NUM_EPOCHS):
+            with torch.no_grad():
+                opt.epoch = ep
+                for ((img, labels), (img2, labels2)) in zip(aug_loader, normal_loader):
+                    img = img.to(device)
+                    labels = labels.to(device)
+                    img2 = img2.to(device)
+                    labels2 = labels2.to(device)
+                    if use_cutmix:
+                        img, labels = cutmix(img, labels)
+                        img2, labels2 = cutmix(img2, labels2)
+                    pred = model_t(img)
+                    pred2 = model_t(img2)
+                    preds = torch.cat([pred, pred2], dim=0)
+                    res = check_variance(opt, preds)
+                    if res is not None:
+                        var_str = res
+                    opt.total_step += 1
+        return var_str
+
     criterion = nn.CrossEntropyLoss()
     entropy_no_reduce = nn.CrossEntropyLoss(reduction="none")
     kl_div = nn.KLDivLoss(reduction="batchmean", log_target=False)
-    log_soft = nn.LogSoftmax(dim=1)
-    cosine_sim = nn.CosineSimilarity(dim=1)
     best_score = -10000.0
-    pool = nn.AdaptiveMaxPool2d((1, 1))
-
-    # _, val_loader = get_loaders([]) 
-
-    # vanilla_logits = []
-    # model_t.eval()
-    # avg = MeanMetric().to(device)
-    # soft = nn.Softmax(dim=1)
-    # with torch.no_grad():
-    #     for (img, labels) in val_loader:
-    #         img = img.to(device)
-    #         labels = labels.to(device)
-    #         pred = model_t(img)
-    #         loss = criterion(pred, labels)
-    #         avg.update(loss)
-    #         vanilla_logits.append(soft(pred).cpu())
-    
-    # print(f"Average Baseline: {avg.compute().item()}")
-    # assert(False)
-    # vanilla_logits = torch.cat(vanilla_logits, dim=0)
 
     def do_iteration(i, best_score, do_print=True, use_augs=None, mask_wrong=False, use_cutmix=False, name=""):
         # model_t.train()
@@ -465,7 +505,8 @@ def main():
                 out["t2"] = "None"
             augs = build_augmentation_transform(use_augs)
 
-        train_loader, _ = get_loaders(augs) 
+        train_loader, std_loader = get_loaders(augs) 
+        avg_var = compute_variance_loop(train_loader, std_loader, use_cutmix=use_cutmix)
         # train_loader2, _ = get_loaders(augs, seed_offset=1)
         avg_train_loss = MeanMetric().to(device)
         avg_min_loss = MeanMetric().to(device)
@@ -493,20 +534,6 @@ def main():
 
                 _, predicted = torch.max(pred.data, 1)
 
-                # for f in feat:
-                #     print(f.size())
-                # assert(False)
-                # for f1, f2 in zip(feat, feat2):
-                #     if f1.ndim > 2:
-                #         f1 = pool(f1).view(args.batch_size, -1)
-                #         f2 = pool(f2).view(args.batch_size, -1)
-                #     print(f1.size())
-                #     vec_sim = -kl_div(f1, f2)
-                #     print(vec_sim)
-                    # print(vec_sim[0:10])
-
-                # vec_sim = cosine_sim(feat[-1], feat2[-1])
-                # logit_sim = cosine_sim(pred, pred2)
                 entropy1 = torch.distributions.Categorical(logits=pred).entropy()
                 # entropy2 = torch.distributions.Categorical(logits=pred2).entropy()
                 # print(logit_sim[0:10])
@@ -522,11 +549,7 @@ def main():
 
 
                 avg_train_loss.update(loss)
-                # avg_train_loss.update(loss2)
-                # avg_min_loss.update(min_loss)
-                # avg_vec_sim.update(vec_sim)
-                # avg_logit_sim.update(logit_sim)
-                # conf.update(pred, labels)
+
                 loss_cmi = cmi.get_loss(pred, labels)
                 # loss_masked_cmi = cmi.get_loss(pred[predicted == labels], labels[predicted == labels])
                 # Experimental masking
@@ -561,7 +584,7 @@ def main():
                     "acc": acc, "masked_cmi": masked_cmi_score, "min_loss": min_loss_score, 
                     "logit_sim": avg_logit_sim.compute().item(), "vector_sim": avg_vec_sim.compute().item(), 
                     "entropy": avg_entropy.compute().item(), "centroid_div": centroid_div.item(),
-                    "centroids": cmi.centroids.tolist()})
+                    "centroids": cmi.centroids.tolist(), "var": avg_var})
         return out
 
     scores = []
@@ -603,7 +626,6 @@ def main():
         ("TrivialAugment", TAW()),
         ("None", v2.Identity()),
     ]
-    # good = TAW()
     idx = 0
     scores = []
     for (name, aug) in special:
@@ -623,6 +645,7 @@ def main():
     with open(f"known_{arch}_{args.num_classes}.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
+
 
 if __name__ == "__main__":
     main()
