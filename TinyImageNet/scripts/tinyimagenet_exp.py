@@ -9,7 +9,7 @@ cutmix_status = os.environ.get("USE_CUTMIX", "False")
 cpus_per_job = int(os.environ.get("USE_CPU", 12))
 
 if arch.lower().startswith("mo"):
-    script = "./scripts/experiment_cifar10_resnet20.sh"
+    script = "./scripts/experiment_mobilenet.sh"
 else:
     assert(False)
 
