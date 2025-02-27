@@ -274,7 +274,7 @@ class ModelQuantizer(object):
                 continue
             if not isinstance(mod, _FusedModule):
                 self._convert(mod, mapping, True, new_scope, freeze_bn= freeze_bn)
-            reassign[name] = swap_module(mod, mapping, {}, False)
+            reassign[name] = swap_module(mod, mapping, {})
             if freeze_bn:
                 if (hasattr(reassign[name], 'freeze_bn')):
                     reassign[name].freeze_bn_stats()
