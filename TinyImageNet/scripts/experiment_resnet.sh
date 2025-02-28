@@ -18,7 +18,7 @@ transform=$3
 cutmix=False
 
 q_bits=3
-q_method="pact"
+q_method="lsq"
 
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
@@ -27,23 +27,23 @@ METHOD_TYPE="${q_method}_w${q_bits}a${q_bits}_${transform}_${cutmix}"
 echo "Method Type: $METHOD_TYPE"
 
 CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
-    --save_root_path "results/tiny-imagenet_mobilenetV2/$METHOD_TYPE" \
-    -a mobilenet_v2 \
+    --save_root_path "results/tiny-imagenet/$METHOD_TYPE" \
+    -a resnet18_imagenet \
     --batch-size 64 \
     --loss-scale 128.0 \
-    --workers $num_workers \
+    --workers $num_workers  \
     --optimizer_type 'SGD' \
     --lr 0.004 \
     --weight_decay 1e-4 \
     --backward_method "org" \
     /home/users/kzhao27/tiny-imagenet-200 \
     --load_pretrain \
-    --pretrain_path "./results/tiny-imagenet_mobilenetV2/mobilenet_v2_fp/checkpoints/checkpoint.pth.tar" \
+    --pretrain_path "./results/tiny-imagenet/resnet18_fp/checkpoints/model_best.pth.tar" \
     --distill True \
-    --teacher_arch mobilenet_v2 \
-    --teacher_path "./results/tiny-imagenet_mobilenetV2/mobilenet_v2_fp/checkpoints/checkpoint.pth.tar" \
-    --gamma 3.0 \
-    --alpha 6.0 \
+    --teacher_arch resnet18_imagenet \
+    --teacher_path "./results/tiny-imagenet/resnet18_fp/checkpoints/model_best.pth.tar" \
+    --gamma 1.0 \
+    --alpha 2.0 \
     --quantization $q_method \
     --bits $q_bits \
     --transform $transform \

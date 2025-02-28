@@ -32,7 +32,7 @@ echo $METHOD_TYPE
 # ===== fp
 if [ $METHOD_TYPE == "resnet18_fp" ] 
 then
-    CUDA_VISIBLE_DEVICES=0 python3.9 main.py \
+    CUDA_VISIBLE_DEVICES=0 python main.py \
     --save_root_path "results/tiny-imagenet/$METHOD_TYPE" \
     -a resnet18_imagenet \
     --batch-size 64 \
@@ -44,6 +44,23 @@ then
     --backward_method "org" \
     /home/users/kzhao27/tiny-imagenet-200 \
     --not-quant \
+    --epochs=100
+
+elif [ $METHOD_TYPE == "resnet18_fp_cutmix" ] 
+then
+    CUDA_VISIBLE_DEVICES=0 python main.py \
+    --save_root_path "results/tiny-imagenet/$METHOD_TYPE" \
+    -a resnet18_imagenet \
+    --batch-size 64 \
+    --loss-scale 128.0 \
+    --workers 10 \
+    --optimizer_type 'SGD' \
+    --lr 5e-2 \
+    --weight_decay 5e-4 \
+    --backward_method "org" \
+    /home/users/kzhao27/tiny-imagenet-200 \
+    --not-quant \
+    --cutmix True \
     --epochs=100
 
 # ===== W8A8, PACT
@@ -131,7 +148,7 @@ then
 
 
 # ===== W3A3, PACT
-if [ $METHOD_TYPE == "pact_overall/pact_a3w3/resnet18_pact_a3w3_independent_sgd_lr0.004_wd1e-4_withPretrain" ]
+elif [ $METHOD_TYPE == "pact_overall/pact_a3w3/resnet18_pact_a3w3_independent_sgd_lr0.004_wd1e-4_withPretrain" ]
 then
     CUDA_VISIBLE_DEVICES=2 python3.9 main.py \
     --save_root_path "results/tiny-imagenet_resnet18/$METHOD_TYPE" \

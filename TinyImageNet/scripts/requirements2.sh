@@ -10,4 +10,5 @@ pip install datasets[vision]
 pip install gputil
 cd ./SQAKD/MQBench
 python setup.py install
+pip install numba
 cd /workspace
