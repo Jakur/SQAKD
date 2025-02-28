@@ -15,6 +15,8 @@ echo "STARTING TIMING RUN AT $start_fmt"
 gpu_id=$1
 num_workers=$2
 transform=$3
+eps=$4
+
 cutmix=False
 
 q_bits=3
@@ -47,7 +49,7 @@ CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
     --quantization $q_method \
     --bits $q_bits \
     --transform $transform \
-    --epochs=100
+    --epochs=$eps
 
 # end timing
 end=$(date +%s)

@@ -44,6 +44,14 @@ then
                 --teacher_arch resnet18_imagenet \
                 --seed 20240913 \
                 --teacher_path "./results/tiny-imagenet/resnet18_fp/checkpoints/checkpoint.pth.tar"
+
+elif [ $METHOD_TYPE == "cmresnet18" ] 
+then
+    CUDA_VISIBLE_DEVICES=0 python augment_search.py --gpu_id '0' \
+                --teacher_arch resnet18_imagenet \
+                --seed 20240913 \
+                --teacher_path "./results/tiny-imagenet/resnet18_fp_cutmix/checkpoints/checkpoint.pth.tar"
+
 fi
 
 # end timing
