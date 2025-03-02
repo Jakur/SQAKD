@@ -17,7 +17,7 @@ num_workers=$2
 transform=$3
 cutmix=$4
 
-quantization=4
+quantization=8
 alpha=2.0
 num_epochs=1200
 num_transforms=1

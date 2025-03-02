@@ -43,7 +43,7 @@ then
                     --weight_decay 5e-4 \
                     --lr_scheduler_m 'cosine' \
                     --epochs 720 \
-                    --seed 20250115 \
+                    --seed 20240913 \
                     --use_cmi True \
                     --cmi_weight 0.0 \
                     --log_dir '../results/CIFAR100_ResNet32/'$METHOD_TYPE

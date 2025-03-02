@@ -305,25 +305,15 @@ def get_custom(custom):
     return trans
 
 def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=False, is_augment=False, num_transforms=3, agg_trans=False, 
-                             custom_transform=None, size=50000):
+                             custom_transform="none", size=50000):
     """
     cifar 100
     """
-    if self_supervised:
-        train_set = datasets.CIFAR100(root=data_folder,
-                                      download=True,
-                                      train=True,
-                                      transform=transforms.ToTensor())
-        test_set = datasets.CIFAR100(root=data_folder,
-                        download=True,
-                        train=False,
-                        transform=transforms.ToTensor())
-        return train_set, test_set
     if is_instance:
         train_set = CIFAR100Instance(root=data_folder,
                                      download=True,
                                      train=True,
-                                     transform=train_transform)
+                                     transform=get_custom(custom_transform))
     elif is_augment:
         if custom_transform is not None:
             trans = get_custom(custom_transform)
@@ -359,14 +349,16 @@ def get_cifar100_dataloaders(data_folder, is_instance=False, self_supervised=Fal
 
 
 
-def get_cifar100_dataloaders_sample(data_folder, k=4096, mode='exact', is_sample=True, percent=1.0, no_labels=False):
+def get_cifar100_dataloaders_sample(data_folder, k=4096, mode='exact', is_sample=True, percent=1.0, 
+                                    no_labels=False, custom_transform="none"):
     """
     cifar 100
     """
+    transform = get_custom(custom_transform)
     train_set = CIFAR100InstanceSample(root=data_folder,
                                        download=True,
                                        train=True,
-                                       transform=train_transform,
+                                       transform=transform,
                                        k=k,
                                        mode=mode,
                                        is_sample=is_sample,

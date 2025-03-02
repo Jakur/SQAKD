@@ -112,7 +112,7 @@ parser.add_argument('--nce_m', default=0.5, type=float, help='momentum for non-p
 parser.add_argument('--head', default='linear', type=str, choices=['linear', 'mlp', 'pad'])
 parser.add_argument('--crd_no_labels', type=str2bool, default=False, help="Disable using label information for choosing negatives, as in SimCLR")
 parser.add_argument('--num_transforms', default=1, type=int, help="Number of transforms to use for SimSiam Distillation")
-parser.add_argument('--transform', type=str, default="auto", choices=["auto", "trivial", "custom", "augmix", 
+parser.add_argument('--transform', type=str, default="none", choices=["auto", "trivial", "custom", "augmix", 
                                                                       "rand", "erasing", "autoimg", "autosvhn", "none"], 
                                                                       help="String value indicating transforms to use")
 parser.add_argument('--cutmix', type=str2bool, default=False, help="Enable Cutmix")
@@ -181,7 +181,8 @@ if args.dataset == 'cifar10':
 elif args.dataset == 'cifar100':
     args.num_classes = 100
     if args.distill == 'crd' or args.distill == 'crdst':
-        train_dataset, test_dataset = get_cifar100_dataloaders_sample(data_folder="../data/CIFAR100/", k=args.nce_k, mode=args.mode, no_labels=args.crd_no_labels)
+        train_dataset, test_dataset = get_cifar100_dataloaders_sample(data_folder="../data/CIFAR100/", k=args.nce_k, mode=args.mode, 
+                                                                      no_labels=args.crd_no_labels, custom_transform=args.transform)
     elif args.distill == 'siam':
         if args.transform == "custom":
             from augment_search import build_from_seeds
@@ -205,7 +206,8 @@ elif args.dataset == 'cifar100':
             transform = args.transform
         train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="../data/CIFAR100/", is_augment=True, num_transforms=args.num_transforms, custom_transform=transform)
     else:
-        train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="../data/CIFAR100/", is_instance=False)
+        transform = args.transform
+        train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="../data/CIFAR100/", is_instance=False, custom_transform=transform)
 
 else:
     raise NotImplementedError
@@ -443,7 +445,8 @@ for ep in range(args.epochs):
             images = images.to(device)
         labels = labels.to(device)
         if args.cutmix:
-            cutmix_images, labels = cutmix(images, labels) # Theoretically bugged on views != 1, but works well (?)
+            # cutmix_images, labels = cutmix(images, labels) # Theoretically bugged on views != 1, but works well (?)
+            images, labels = cutmix(images, labels) # Theoretically bugged on views != 1, but works well (?)
         
         # print((cutmix_images[0] - images[0]).square().sum())
         # print((cutmix_images[1] - images[1]).square().sum())

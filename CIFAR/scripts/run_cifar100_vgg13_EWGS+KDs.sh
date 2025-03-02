@@ -21,19 +21,35 @@ start=$(date +%s)
 start_fmt=$(date +%Y-%m-%d\ %r)
 echo "STARTING TIMING RUN AT $start_fmt"
 
+gpu_id=$1
+kd_method=$2
+ours=$3
+if [[ $baseline == "f" ]]
+then
+    transform='none'
+    cutmix=False
+else
+    transform="trivial"
+    cutmix=True
+fi
 
-METHOD_TYPE=$1
+METHOD_TYPE="${kd_method}_${ours}"
+
+epochs=200
+quantize=4
+num_workers=12
+teacher='./results/CIFAR100_VGG13/fp_cutmix/checkpoint/last_checkpoint.pth'
 echo $METHOD_TYPE
 
 
 
 # EWGS + SQAKD
-if [ $METHOD_TYPE == "EWGS+SQAKD/W1A1/" ] 
+if [[ $kd_method == "sqakd" ]] 
 then
-    python3 train_quant.py --gpu_id '0' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -42,17 +58,20 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'kd' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 0.0 \
                         --kd_alpha 1.0 \
                         --kd_beta 0.0
@@ -60,12 +79,12 @@ then
 
 
 # EWGS + AT
-elif [ $METHOD_TYPE == "EWGS+AT/W1A1/" ] 
+elif [[ $kd_method == "at" ]] 
 then
-    python3 train_quant.py --gpu_id '1' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -74,28 +93,31 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'attention' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 1000
 
 # EWGS + NST
-elif [ $METHOD_TYPE == "EWGS+NST/W1A1/" ] 
+elif [[ $kd_method == "nst" ]] 
 then
-    python3 train_quant.py --gpu_id '2' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -104,28 +126,31 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'nst' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 50
 
 # EWGS + SP
-elif [ $METHOD_TYPE == "EWGS+SP/W1A1/" ] 
+elif [[ $kd_method == "sp" ]] 
 then
-    python3 train_quant.py --gpu_id '3' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -134,29 +159,32 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'similarity' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 3000
 
 
 # EWGS + RKD
-elif [ $METHOD_TYPE == "EWGS+RKD/W1A1/" ] 
+elif [[ $kd_method == "rkd" ]] 
 then
-    python3 train_quant.py --gpu_id '0' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -165,29 +193,32 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'rkd' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 1
 
 
 # EWGS + CRD
-elif [ $METHOD_TYPE == "EWGS+CRD/W1A1/" ] 
+elif [[ $kd_method == "crd" ]] 
 then
-    python3 train_quant.py --gpu_id '3' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -196,29 +227,32 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'crd' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 0.8
 
 
 # EWGS + FitNet
-elif [ $METHOD_TYPE == "EWGS+FitNet/W1A1/" ] 
+elif [[ $kd_method == "fitnet" ]] 
 then
-    python3 train_quant.py --gpu_id '0' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -227,29 +261,32 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'hint' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 100
 
 
 # EWGS + CC
-elif [ $METHOD_TYPE == "EWGS+CC/W1A1/" ] 
+elif [[ $kd_method == "cc" ]] 
 then
-    python3 train_quant.py --gpu_id '1' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -258,28 +295,31 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'correlation' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 0.02
 
 # EWGS + VID
-elif [ $METHOD_TYPE == "EWGS+VID/W1A1/" ] 
+elif [[ $kd_method == "vid" ]] 
 then
-    python3 train_quant.py --gpu_id '2' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -288,28 +328,31 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'vid' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 1.0
 
 # EWGS + FSP
-elif [ $METHOD_TYPE == "EWGS+FSP/W1A1/" ] 
+elif [[ $kd_method == "fsp" ]] 
 then
-    python3 train_quant.py --gpu_id '3' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -318,28 +361,31 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'fsp' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 50
 
 # EWGS + FT
-elif [ $METHOD_TYPE == "EWGS+FT/W1A1/" ] 
+elif [[ $kd_method == "ft" ]] 
 then
-    python3 train_quant.py --gpu_id '0' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -348,29 +394,32 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'factor' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 200
 
 
 # EWGS + CKTF
-elif [ $METHOD_TYPE == "EWGS+CKTF/W1A1/" ] 
+elif [[ $kd_method == "cktf" ]] 
 then
-    python3 train_quant.py --gpu_id '1' \
+    python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
                         --arch 'vgg13_bn_quant' \
-                        --num_workers 8 \
+                        --num_workers $num_workers \
                         --batch_size 64 \
                         --weight_decay 5e-4 \
                         --optimizer_m 'Adam' \
@@ -379,17 +428,20 @@ then
                         --lr_q 5e-6 \
                         --lr_scheduler_m 'cosine' \
                         --lr_scheduler_q 'cosine' \
-                        --epochs 720 \
-                        --weight_levels 2 \
-                        --act_levels 2 \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
                         --baseline False \
                         --use_hessian True \
                         --load_pretrain True \
-                        --pretrain_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --pretrain_path $teacher \
                         --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
                         --distill 'crdst' \
                         --teacher_arch 'vgg13_bn_fp' \
-                        --teacher_path './results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 1.0 \
