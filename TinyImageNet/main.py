@@ -469,7 +469,7 @@ def main():
         if args.distill:
             avg_train_time, model = train_distill(train_loader, module_list, criterion_list, optimizer, epoch, lr_scheduler, train_loader_len, data_loader_type, 
                                             val_loader, criterion, val_loader_len, # for evaluate test acc
-                                                tb_logger, args) # for cosine
+                                                tb_logger, args, use_cutmix=args.cutmix) # for cosine
         else:
             avg_train_time = train(train_loader, model, criterion, optimizer, epoch, lr_scheduler, train_loader_len, data_loader_type, 
                                     val_loader, val_loader_len, # for evaluate test acc
@@ -669,7 +669,7 @@ def train(train_loader, model, criterion, optimizer, epoch, lr_scheduler, train_
 
 def train_distill(train_loader, module_list, criterion_list, optimizer, epoch, lr_scheduler, train_loader_len, data_loader_type, 
                     val_loader, criterion, val_loader_len,
-                        tb_logger=None, args=None):
+                        tb_logger=None, args=None, use_cutmix=False):
     
     for module in module_list:
         module.train()
@@ -690,6 +690,7 @@ def train_distill(train_loader, module_list, criterion_list, optimizer, epoch, l
 
     end = time.time()
 
+    cutmix = v2.CutMix(num_classes=args.num_classes)
     # train_loader_len = int(math.ceil(train_loader._size / args.batch_size))
     
     # lr_scheduler = init_lr_scheduler(optimizer)
@@ -707,6 +708,9 @@ def train_distill(train_loader, module_list, criterion_list, optimizer, epoch, l
             target = target.cuda()
         else:
             NotImplementedError
+
+        if use_cutmix:
+            input, target = cutmix(input, target)
 
         # if i==0 and epoch==1:
         #     print("the very first calibration, happence only once")
