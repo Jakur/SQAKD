@@ -785,7 +785,11 @@ def train_distill(train_loader, module_list, criterion_list, optimizer, epoch, l
             # iteration, since they incur an allreduce and some host<->device syncs.
 
             # Measure accuracy
-            prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+            if use_cutmix:
+                prec1 = [0.0]
+                prec5 = [0.0]
+            else:
+                prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
 
             # Average loss and accuracy across processes for logging
             if args.distributed:
