@@ -49,6 +49,15 @@ from utils_measure_inference import measure_inference
 
 
 def parse():
+    def str2bool(v):
+        if isinstance(v, bool):
+            return v
+        if v.lower() in ('yes', 'true', 't', 'y', '1'):
+            return True
+        elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+            return False
+        else:
+            raise argparse.ArgumentTypeError('Boolean value expected.')
     # model_names = sorted(name for name in models.__dict__
     #                  if name.islower() and not name.startswith("__")
     #                  and callable(models.__dict__[name])) 
@@ -110,7 +119,7 @@ def parse():
                                                                       "rand", "erasing", "autoimg", "autosvhn", "none"], 
                                                                       help="String value indicating transforms to use")
     parser.add_argument('--seed', type=int, default=None, help='seed for initialization')
-    parser.add_argument('--cutmix', default=False, type=bool)
+    parser.add_argument('--cutmix', type=str2bool, default="f")
     # parser.add_argument('--lr_scheduler_type', type=str, default='cosine', choices=('step','cosine'), help='type of the scheduler')
     # parser.add_argument('--lr_decay_schedule', type=str, help='learning rate decaying schedule (for step)')
 
@@ -133,6 +142,7 @@ def main():
     best_prec1 = 0
     best_prec5 = 0
     args = parse()
+    assert(not args.cutmix)
     args.quant = not args.not_quant
 
     
@@ -710,6 +720,7 @@ def train_distill(train_loader, module_list, criterion_list, optimizer, epoch, l
             NotImplementedError
 
         if use_cutmix:
+            assert(False)
             input, target = cutmix(input, target)
 
         # if i==0 and epoch==1:
