@@ -142,7 +142,6 @@ def main():
     best_prec1 = 0
     best_prec5 = 0
     args = parse()
-    assert(not args.cutmix)
     args.quant = not args.not_quant
 
     
@@ -720,7 +719,6 @@ def train_distill(train_loader, module_list, criterion_list, optimizer, epoch, l
             NotImplementedError
 
         if use_cutmix:
-            assert(False)
             input, target = cutmix(input, target)
 
         # if i==0 and epoch==1:
