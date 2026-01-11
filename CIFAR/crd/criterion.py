@@ -96,7 +96,7 @@ class CRDLoss(nn.Module):
         """
         f_s = self.embed_s(f_s) # [bs, 128]
         f_t = self.embed_t(f_t) # [bs, 128]
-        out_s, out_t = self.contrast(f_s, f_t, idx, contrast_idx) # [4, 16385, 1]
+        out_s, out_t = self.contrast(f_s, f_t, idx, contrast_idx) # [bs, 16385 (nce_k), 1]
         s_loss = self.criterion_s(out_s)
         t_loss = self.criterion_t(out_t)
         loss = s_loss + t_loss

@@ -63,9 +63,12 @@ parser.add_argument('--use_cmi', type=str2bool, default=False, help="Track CMI")
 parser.add_argument('--cmi_weight', type=float, default=0.0, help="Contextual Mutual Information weight")
 parser.add_argument('--self_supervised', type=str2bool, default=False)
 parser.add_argument('--aggressive_transforms', type=str2bool, default=False, help="Aggressive transforms")
-parser.add_argument('--augment', type=str, choices=('custom', 'none'), default="none")
+# parser.add_argument('--augment', type=str, choices=('custom', 'none'), default="none")
+parser.add_argument('--transform', type=str, default="none", choices=["auto", "trivial", "custom", "augmix", 
+                                                                      "rand", "erasing", "autoimg", "autosvhn", "none"], 
+                                                                      help="String value indicating transforms to use")
 parser.add_argument('--cutmix', type=str2bool, default=False, help="Enable Cutmix")
-
+parser.add_argument('--subset', type=int, default=50000, help="Training dataset size")
 
 # logging and misc
 parser.add_argument('--gpu_id', type=str, default='0', help='target GPU to use')
@@ -120,14 +123,16 @@ if args.dataset == 'cifar10':
 
 elif args.dataset == 'cifar100':
     args.num_classes = 100
-    if args.augment == "custom":
-        from augment_search import build_from_seeds
-        transform = build_from_seeds([x + args.seed] for x in [101, 233, 287, 339, 462, 474, 187, 396, 494, 476])
+    if args.transform != "none":
+        transform = args.transform
+        # from augment_search import build_from_seeds
+        # transform = build_from_seeds([x + args.seed] for x in [101, 233, 287, 339, 462, 474, 187, 396, 494, 476])
     else:
         transform = None 
 
     train_dataset, test_dataset = get_cifar100_dataloaders(data_folder="./dataset/data/CIFAR100/", is_instance=False,
-                                                           self_supervised=args.self_supervised, agg_trans=args.aggressive_transforms, custom_transform=transform)
+                                                           self_supervised=args.self_supervised, agg_trans=args.aggressive_transforms, custom_transform=transform,
+                                                           size=args.subset)
 
 else:
     raise NotImplementedError

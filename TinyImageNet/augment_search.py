@@ -29,11 +29,6 @@ import torchvision.transforms.functional as F
 from models import model_dict
 from data_loaders.imagenet_data_loader import imagenet_data_loader
 
-class Settings():
-    def __init__(self, transform_name):
-        self.transform = transform_name
-        self.workers = 8
-        self.batch_size = 50
 
 class Centroid(nn.Module):
     def __init__(self, num_classes=100):
@@ -128,6 +123,14 @@ def main():
     parser.add_argument('--gamma', type=float, default=0.1, help='decaying factor (for step)')
     parser.add_argument('--use_cmi', type=str2bool, default=False, help="Track CMI")
     parser.add_argument('--cmi_weight', type=float, default=0.0, help="Contextual Mutual Information weight")
+    parser.add_argument('--subset', type=str2bool, default=True, help="Subset")
+
+    class Settings():
+        def __init__(self, transform_name):
+            self.transform = transform_name
+            self.workers = 8
+            self.batch_size = 50
+            self.subset = args.subset
 
 
     # logging and misc
@@ -185,7 +188,7 @@ def main():
 
     def get_loaders(augmentation, seed_offset=0, var=False): 
         _init_fn(seed_offset)
-        train, _ = imagenet_data_loader(Settings(augmentation), multi=var)
+        train, _ = imagenet_data_loader(Settings(augmentation), multi=var, inverse_subset=True)
         return train
 
     ### set the seed number
@@ -300,7 +303,8 @@ def main():
         # augs = build_augmentation_transform(use_augs)
         train_loader = get_loaders(augs)
         var_loader = get_loaders(augs, var=True)
-        avg_var = compute_variance_loop(var_loader, use_cutmix=use_cutmix)
+        avg_var = 0
+        # avg_var = compute_variance_loop(var_loader, use_cutmix=use_cutmix)
         # train_loader2, _ = get_loaders(augs, seed_offset=1)
         avg_train_loss = MeanMetric().to(device)
         avg_min_loss = MeanMetric().to(device)
@@ -407,7 +411,7 @@ def main():
     # temp4 = do_iteration(3, -10000, use_augs=[TAW()], do_print=True, use_cutmix=False)
     # scores = [temp, temp2, temp3, temp4]
     arch = args.teacher_arch.split("_")[0]
-    with open(f"known_{arch}_{args.num_classes}.json", "w") as f:
+    with open(f"known_FOO{arch}_{args.num_classes}.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
 

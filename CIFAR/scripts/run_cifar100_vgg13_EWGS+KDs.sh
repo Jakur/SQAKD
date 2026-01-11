@@ -24,21 +24,23 @@ echo "STARTING TIMING RUN AT $start_fmt"
 gpu_id=$1
 kd_method=$2
 ours=$3
-if [[ $baseline == "f" ]]
-then
-    transform='none'
-    cutmix=False
-else
-    transform="trivial"
-    cutmix=True
-fi
+transform="auto"
+cutmix=False
+# if [[ $baseline == "f" ]]
+# then
+#     transform='none'
+#     cutmix=False
+# else
+#     transform="trivial"
+#     cutmix=True
+# fi
 
 METHOD_TYPE="${kd_method}_${ours}"
 
 epochs=200
 quantize=4
-num_workers=12
-teacher='./results/CIFAR100_VGG13/fp_cutmix/checkpoint/last_checkpoint.pth'
+num_workers=8
+teacher='./results/CIFAR100_VGG13/fp/checkpoint/best_checkpoint.pth'
 echo $METHOD_TYPE
 
 
@@ -213,7 +215,7 @@ then
 
 
 # EWGS + CRD
-elif [[ $kd_method == "crd" ]] 
+elif [[ $kd_method == "crd4" ]] 
 then
     python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
