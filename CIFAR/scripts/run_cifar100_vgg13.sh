@@ -55,7 +55,7 @@ then
                     --transform 'auto' \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 
-elif [ $METHOD_TYPE == "fp_subset/" ]
+elif [ $METHOD_TYPE == "fp_subset_cutmix/" ]
 then
     python3 train_fp.py --gpu_id '0' \
                     --dataset 'cifar100' \
@@ -67,6 +67,7 @@ then
                     --lr_scheduler_m 'cosine' \
                     --epochs 720 \
                     --seed 20240913 \
+                    --cutmix True \
                     --subset 40000 \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE
 

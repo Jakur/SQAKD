@@ -725,7 +725,7 @@ def main():
     # temp4 = do_iteration(3, -10000, use_augs=[TAW()], do_print=True, use_cutmix=False)
     # scores = [temp, temp2, temp3, temp4]
     arch = args.teacher_arch.split("_")[0]
-    with open(f"2026/{arch}_{args.num_classes}.json", "w") as f:
+    with open(f"2026/subset_{arch}_{args.num_classes}.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
 

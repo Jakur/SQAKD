@@ -16,21 +16,20 @@ gpu_id=$1
 num_workers=$2
 transform=$3
 cutmix=$4
+seed=$5
 
 quantization=16
 alpha=2.0
 num_epochs=200
 num_transforms=1
-teacher="fp_cutmix"
-seed=20250215
 
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
-teacher_path="./results/CIFAR100_ResNet32/${teacher}/checkpoint/last_checkpoint.pth"
+teacher_path="/workspace/c100_r32_fp_cutmix.pth"
 echo "Teacher Path: $teacher_path"
 
-METHOD_TYPE="${quantization}_${transform}_${cutmix}_${num_transforms}"
+METHOD_TYPE="${quantization}_${transform}_${cutmix}_${seed}"
 echo "Method Type: $METHOD_TYPE"
 
 # Logic  
