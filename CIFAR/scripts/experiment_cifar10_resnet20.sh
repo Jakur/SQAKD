@@ -43,14 +43,14 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --baseline False \
                     --use_hessian True \
                     --load_pretrain True \
-                    --pretrain_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --pretrain_path $teacher_path \
                     --log_dir './results/CIFAR10_ResNet20/'$METHOD_TYPE \
                     --distill 'kd' \
                     --num_transforms $num_transforms \
                     --transform $transform \
                     --cutmix $cutmix \
                     --teacher_arch 'resnet20_fp' \
-                    --teacher_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --teacher_path $teacher_path \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
                     --kd_beta 0.0 \
