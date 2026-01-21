@@ -8,11 +8,11 @@ from subprocess import Popen, PIPE
 # cpus_per_job = int(os.environ.get("USE_CPU", 12))
 arch = "mobile"
 jobs_per_gpu = 1
-num_gpus = 8
+num_gpus = 4
 num_jobs = num_gpus * jobs_per_gpu
-num_cpus = 100
+num_cpus = 24
 cpus_per_job = num_cpus // num_jobs
-seeds = ["20260113", "20260114"]
+seeds = ["20260113"]
 
 if arch.lower().startswith("mo"):
     script = "./scripts/experiment_mobilenet.sh"

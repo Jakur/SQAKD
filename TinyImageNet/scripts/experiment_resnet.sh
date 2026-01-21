@@ -26,7 +26,7 @@ q_method="lsq"
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
-METHOD_TYPE="${q_method}_w${q_bits}a${q_bits}_${transform}_${cutmix}"
+METHOD_TYPE="${q_method}_w${q_bits}a${q_bits}_${transform}_${cutmix}_${seed}"
 echo "Method Type: $METHOD_TYPE"
 
 # Note, at one point this used the model_best not the last checkpoint
