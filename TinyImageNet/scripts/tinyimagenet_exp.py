@@ -10,7 +10,7 @@ arch = "mobile"
 jobs_per_gpu = 1
 num_gpus = 8
 num_jobs = num_gpus * jobs_per_gpu
-num_cpus = 64
+num_cpus = 100
 cpus_per_job = num_cpus // num_jobs
 seeds = ["20260113", "20260114"]
 

@@ -41,7 +41,7 @@ CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
     --lr 0.004 \
     --weight_decay 1e-4 \
     --backward_method "org" \
-    /placeholder/ \
+    /placeholder/tiny-imagenet-200 \
     --load_pretrain \
     --pretrain_path "/workspace/timg_r18_fp.tar" \
     --distill True \
