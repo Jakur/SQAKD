@@ -15,7 +15,10 @@ echo "STARTING TIMING RUN AT $start_fmt"
 gpu_id=$1
 num_workers=$2
 transform=$3
-cutmix=False
+cutmix=$4
+seed=$5
+
+eps=100
 
 q_bits=3
 q_method="lsq"
@@ -25,6 +28,8 @@ echo "Number of Transforms: $num_transforms"
 
 METHOD_TYPE="${q_method}_w${q_bits}a${q_bits}_${transform}_${cutmix}"
 echo "Method Type: $METHOD_TYPE"
+
+# Note, at one point this used the model_best not the last checkpoint
 
 CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
     --save_root_path "results/tiny-imagenet/$METHOD_TYPE" \
@@ -36,18 +41,20 @@ CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
     --lr 0.004 \
     --weight_decay 1e-4 \
     --backward_method "org" \
-    /home/users/kzhao27/tiny-imagenet-200 \
+    /placeholder/ \
     --load_pretrain \
-    --pretrain_path "./results/tiny-imagenet/resnet18_fp/checkpoints/model_best.pth.tar" \
+    --pretrain_path "/workspace/timg_r18_fp.tar" \
     --distill True \
     --teacher_arch resnet18_imagenet \
-    --teacher_path "./results/tiny-imagenet/resnet18_fp/checkpoints/model_best.pth.tar" \
+    --teacher_path "/workspace/timg_r18_fp.tar" \
     --gamma 1.0 \
     --alpha 2.0 \
     --quantization $q_method \
     --bits $q_bits \
+    --seed $seed \
+    --cutmix $cutmix \
     --transform $transform \
-    --epochs=100
+    --epochs=$eps
 
 # end timing
 end=$(date +%s)
