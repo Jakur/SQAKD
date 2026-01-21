@@ -521,8 +521,8 @@ def main():
             tb_logger.add_scalar('val_acc/acc1', prec1, epoch)
             tb_logger.add_scalar('val_acc/acc5', prec5, epoch)
 
-            with open(f"{root_path}/loss.txt", "a") as f:
-                f.write(f"ep={epoch}, test_acc={best_prec1}, test_acc_five={best_prec5}\n")
+            with open(f"{root_path}/loss.txt", "a") as loss_file:
+                loss_file.write(f"ep={epoch}, test_acc={best_prec1}, test_acc_five={best_prec5}\n")
 
         if data_loader_type == "dali":
             train_loader.reset()

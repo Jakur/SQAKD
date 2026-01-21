@@ -10,9 +10,9 @@ arch = "mobile"
 jobs_per_gpu = 1
 num_gpus = 4
 num_jobs = num_gpus * jobs_per_gpu
-num_cpus = 24
+num_cpus = 48
 cpus_per_job = num_cpus // num_jobs
-seeds = ["20260113"]
+seeds = ["20260114"]
 
 if arch.lower().startswith("mo"):
     script = "./scripts/experiment_mobilenet.sh"
