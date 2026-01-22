@@ -17,8 +17,20 @@ num_workers=$2
 transform=$3
 cutmix=$4
 seed=$5
+quantization=$6
+kd=$7 # siam 
 
-quantization=8
+if [ $4 -eq "True" ]; then
+    cutmix=$4
+elif [ $4 -eq "False" ]; then 
+    cutmix=$4
+elif [ $4 -eq "QAT" ]; then 
+    cutmix="False"
+    kd="none"
+else
+    die "Unimplemented: $4"
+fi
+
 alpha=2.0
 num_epochs=200
 num_transforms=1
@@ -54,7 +66,7 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --load_pretrain True \
                     --pretrain_path $teacher_path \
                     --log_dir './results/CIFAR100_VGG13/'$METHOD_TYPE \
-                    --distill 'siam' \
+                    --distill $kd \
                     --teacher_arch 'vgg13_bn_fp' \
                     --teacher_path $teacher_path \
                     --seed $seed \

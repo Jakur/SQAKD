@@ -268,17 +268,15 @@ def main():
         for ep in range(NUM_EPOCHS):
             with torch.no_grad():
                 opt.epoch = ep
-                for (img, img2, labels) in aug_loader:
+                for (img, labels) in aug_loader:
                     img = img.to(device)
                     labels = labels.to(device)
-                    img2 = img2.to(device)
                     if use_cutmix:
                         img, labels1 = cutmix(img, labels)
-                        img2, labels2 = cutmix(img2, labels)
                     pred = model_t(img)
-                    pred2 = model_t(img2)
-                    preds = torch.cat([pred, pred2], dim=0)
-                    res = check_variance(opt, preds)
+                    # pred2 = model_t(img2)
+                    # preds = torch.cat([pred, pred2], dim=0)
+                    res = check_variance(opt, pred)
                     if res is not None:
                         var_str = res
                     opt.total_step += 1
@@ -336,9 +334,9 @@ def main():
             out["t2"] = "None"
 
         train_loader = get_loaders(augs)
-        var_loader = get_loaders(augs, var=True)
-        # avg_var = compute_variance_loop(train_loader, std_loader, use_cutmix=use_cutmix)
-        avg_var = 0
+        # var_loader = get_loaders(augs, var=True)
+        avg_var = compute_variance_loop(train_loader, use_cutmix=use_cutmix)
+        # avg_var = 0
         # train_loader2, _ = get_loaders(augs, seed_offset=1)
         avg_train_loss = MeanMetric().to(device)
         avg_min_loss = MeanMetric().to(device)
@@ -494,7 +492,7 @@ def main():
     # temp4 = do_iteration(3, -10000, use_augs=[TAW()], do_print=True, use_cutmix=False)
     # scores = [temp, temp2, temp3, temp4]
     arch = args.teacher_arch.split("_")[0]
-    with open(f"../CIFAR/2026/TIMG_{arch}_{args.num_classes}.json", "w") as f:
+    with open(f"../CIFAR/2026/final_TIMG_{arch}_{args.num_classes}.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
 

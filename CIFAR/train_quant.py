@@ -91,7 +91,7 @@ parser.add_argument('--pretrain_path', type=str, default='./results/ResNet20_CIF
 # knowledge distillation
 parser.add_argument('--distill', type=str, default=None, choices=['kd', 'crdst','hint', 'attention', 'similarity',
                                                     'correlation', 'vid', 'crd', 'kdsvd', 'fsp',
-                                                    'rkd', 'pkt', 'abound', 'factor', 'nst', 'siam'])
+                                                    'rkd', 'pkt', 'abound', 'factor', 'nst', 'siam', 'none'])
 parser.add_argument('--teacher_path', type=str)
 parser.add_argument('--teacher_arch', type=str)
 parser.add_argument('--kd_T', type=float, default=4, help='temperature for KD distillation')
@@ -129,6 +129,8 @@ parser.add_argument('--init_epochs', type=int, default=30, help='init training f
 
 args = parser.parse_args()
 arg_dict = vars(args)
+if args.distill == "none":
+    args.distill = None
 
 ### make log directory
 if not os.path.exists(args.log_dir):

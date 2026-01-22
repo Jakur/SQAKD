@@ -17,8 +17,20 @@ num_workers=$2
 transform=$3
 cutmix=$4
 seed=$5
+quantization=$6
+kd=$7
 
-quantization=4
+if [ $4 -eq "True" ]; then
+    cutmix=$4
+elif [ $4 -eq "False" ]; then 
+    cutmix=$4
+elif [ $4 -eq "QAT" ]; then 
+    cutmix="False"
+    kd="none"
+else
+    die "Unimplemented: $4"
+fi
+
 alpha=2.0
 num_epochs=400
 num_transforms=1
@@ -26,6 +38,7 @@ num_transforms=1
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
+# teacher_path="/home/justin/extra_storage/SQAKD_backup_2/results/CIFAR10_VGG8/fp_cutmix/checkpoint/last_checkpoint.pth"
 teacher_path="/workspace/c10_vgg8_fp_cutmix.pth"
 echo "Teacher Path: $teacher_path"
 
@@ -45,7 +58,7 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --load_pretrain True \
                     --pretrain_path $teacher_path \
                     --log_dir './results/CIFAR10_VGG8/'$METHOD_TYPE \
-                    --distill 'kd' \
+                    --distill $kd \
                     --num_transforms $num_transforms \
                     --transform $transform \
                     --cutmix $cutmix \

@@ -17,8 +17,9 @@ num_workers=$2
 transform=$3
 cutmix=$4
 seed=$5
+quantization=$6
+kd=$7
 
-quantization=4
 alpha=2.0
 num_epochs=400
 num_transforms=1
@@ -45,7 +46,7 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --load_pretrain True \
                     --pretrain_path $teacher_path \
                     --log_dir './results/CIFAR10_ResNet20/'$METHOD_TYPE \
-                    --distill 'kd' \
+                    --distill $kd \
                     --num_transforms $num_transforms \
                     --transform $transform \
                     --cutmix $cutmix \

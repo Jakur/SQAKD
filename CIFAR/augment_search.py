@@ -466,6 +466,7 @@ def main():
     
     def check_variance(opt, logit_t):
         # Check teacher's avg probability, Neurips'22
+        # print(logit_t.size())
         p = torch.nn.functional.softmax(logit_t, dim=-1)
         opt.prob += [p] # [batch_size, num_classes]
         opt.entropy += [(-p * torch.log(p)).sum(dim=-1)] # [batch_size]
@@ -477,6 +478,7 @@ def main():
         num = 5
         if len(opt.prob) >= num: 
             prob = torch.cat(opt.prob, dim=0) # [..., num_classes]
+            # print(f"Prob: {prob.size()}")
             entropy = torch.cat(opt.entropy, dim=0)
             avg_prob = prob.mean(dim=0) # [num_classes]
             opt.all_avg_prob += [avg_prob]
@@ -508,9 +510,9 @@ def main():
                         img, labels = cutmix(img, labels)
                         img2, labels2 = cutmix(img2, labels2)
                     pred = model_t(img)
-                    pred2 = model_t(img2)
-                    preds = torch.cat([pred, pred2], dim=0)
-                    res = check_variance(opt, preds)
+                    # pred2 = model_t(img2)
+                    # preds = torch.cat([pred, pred2], dim=0)
+                    res = check_variance(opt, pred)
                     if res is not None:
                         var_str = res
                     opt.total_step += 1
@@ -543,8 +545,8 @@ def main():
             augs = build_augmentation_transform(use_augs)
 
         train_loader, std_loader = get_loaders(augs) 
-        # avg_var = compute_variance_loop(train_loader, std_loader, use_cutmix=use_cutmix)
-        avg_var = 0
+        avg_var = compute_variance_loop(train_loader, std_loader, use_cutmix=use_cutmix)
+        # avg_var = 0
         # train_loader2, _ = get_loaders(augs, seed_offset=1)
         avg_train_loss = MeanMetric().to(device)
         avg_min_loss = MeanMetric().to(device)
@@ -725,7 +727,7 @@ def main():
     # temp4 = do_iteration(3, -10000, use_augs=[TAW()], do_print=True, use_cutmix=False)
     # scores = [temp, temp2, temp3, temp4]
     arch = args.teacher_arch.split("_")[0]
-    with open(f"2026/subset_{arch}_{args.num_classes}.json", "w") as f:
+    with open(f"2026/final_{arch}_{args.num_classes}.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
 

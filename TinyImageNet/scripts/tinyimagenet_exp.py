@@ -6,11 +6,12 @@ from subprocess import Popen, PIPE
 # arch = os.environ.get("ARCH", "Resnet")
 # num_gpus = int(os.environ.get("GPU_COUNT", 1))
 # cpus_per_job = int(os.environ.get("USE_CPU", 12))
-arch = "mobile"
+# arch = "mobile"
+arch = "resnet"
 jobs_per_gpu = 1
 num_gpus = 4
 num_jobs = num_gpus * jobs_per_gpu
-num_cpus = 48
+num_cpus = 26
 cpus_per_job = num_cpus // num_jobs
 seeds = ["20260114"]
 
