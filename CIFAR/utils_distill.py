@@ -8,7 +8,7 @@ from models.util import Connector, Translator, Paraphraser
 
 from distiller_zoo import SimilarityTransfer
 from distiller_zoo import DistillKL, HintLoss, Attention, Similarity, Correlation, VIDLoss, RKDLoss
-from distiller_zoo import FactorTransfer, FSP, NSTLoss
+from distiller_zoo import FactorTransfer, FSP, NSTLoss, RLD
 from crd.criterion import CRDLoss, FastSiamLoss
 
 from utils import printRed
@@ -36,6 +36,9 @@ def define_distill_module_and_loss(model_s, model_t, model_params, args, n_data,
     criterion_div = DistillKL(args.kd_T)
     if args.distill == 'kd':
         criterion_kd = DistillKL(args.kd_T)
+
+    elif args.distill == "rld":
+        criterion_kd = RLD()
 
     elif args.distill == 'siam':
         # criterion_kd = DistillKL(args.kd_T)
@@ -179,7 +182,7 @@ def define_distill_module_and_loss(model_s, model_t, model_params, args, n_data,
 
 
 
-def get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast_idx):
+def get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast_idx, labels, epoch):
 
     global num_calls
     num_calls += 1
@@ -230,6 +233,10 @@ def get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast
         f_s = feat_s[-1]
         f_t = feat_t[-1]
         loss_kd = criterion_kd(f_s, f_t)
+    elif args.distill == "rld":
+        f_s = feat_s[-1]
+        f_t = feat_t[-1]
+        loss_kd = criterion_kd(f_s, f_t, labels, epoch)
     elif args.distill == 'pkt':
         f_s = feat_s[-1]
         f_t = feat_t[-1]

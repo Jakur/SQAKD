@@ -91,7 +91,7 @@ parser.add_argument('--pretrain_path', type=str, default='./results/ResNet20_CIF
 # knowledge distillation
 parser.add_argument('--distill', type=str, default=None, choices=['kd', 'crdst','hint', 'attention', 'similarity',
                                                     'correlation', 'vid', 'crd', 'kdsvd', 'fsp',
-                                                    'rkd', 'pkt', 'abound', 'factor', 'nst', 'siam', 'none'])
+                                                    'rkd', 'pkt', 'abound', 'factor', 'nst', 'siam', 'rld', 'none'])
 parser.add_argument('--teacher_path', type=str)
 parser.add_argument('--teacher_arch', type=str)
 parser.add_argument('--kd_T', type=float, default=4, help='temperature for KD distillation')
@@ -540,7 +540,8 @@ for ep in range(args.epochs):
             else:
                 # Short circuit
                 if args.kd_beta != 0.0:
-                    loss_kd = utils_distill.get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, index, contrast_idx)
+                    loss_kd = utils_distill.get_loss_kd(args, feat_s, feat_t, criterion_kd, module_list, 
+                                                        index, contrast_idx, labels, ep)
                 else:
                     loss_kd = 0.0
                 alpha = get_alpha(ep)

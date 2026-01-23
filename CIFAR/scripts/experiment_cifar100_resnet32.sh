@@ -28,6 +28,7 @@ echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
 teacher_path="/workspace/c100_r32_fp_cutmix.pth"
+# teacher_path="/home/justin/extra_storage/SQAKD_backup_2/results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth"
 echo "Teacher Path: $teacher_path"
 
 METHOD_TYPE="${quantization}_${transform}_${cutmix}_${seed}"
