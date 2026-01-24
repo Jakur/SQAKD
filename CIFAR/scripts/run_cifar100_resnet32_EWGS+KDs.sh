@@ -45,7 +45,7 @@ echo $METHOD_TYPE
 
 
 # EWGS + SQAKD
-if [[ $kd_method == "sqakd" ]] 
+if [[ $kd_method == "kd" ]] 
 then
     python train_quant.py --gpu_id $gpu_id \
                         --dataset 'cifar100' \
@@ -73,8 +73,8 @@ then
                         --transform $transform \
                         --cutmix $cutmix \
                         --seed 20240913 \
-                        --kd_gamma 0.0 \
-                        --kd_alpha 1.0 \
+                        --kd_gamma 1.0 \
+                        --kd_alpha 2.0 \
                         --kd_beta 0.0
 
 
@@ -111,6 +111,39 @@ then
                         --kd_gamma 1.0 \
                         --kd_alpha 0.0 \
                         --kd_beta 1000
+
+# EWGS + AT
+elif [[ $kd_method == "rld" ]] 
+then
+    python train_quant.py --gpu_id $gpu_id \
+                        --dataset 'cifar100' \
+                        --arch 'resnet32_quant' \
+                        --num_workers $num_workers \
+                        --batch_size 64 \
+                        --weight_decay 5e-4 \
+                        --optimizer_m 'Adam' \
+                        --optimizer_q 'Adam' \
+                        --lr_m 5e-4 \
+                        --lr_q 5e-6 \
+                        --lr_scheduler_m 'cosine' \
+                        --lr_scheduler_q 'cosine' \
+                        --epochs $epochs \
+                        --weight_levels $quantize \
+                        --act_levels $quantize \
+                        --baseline False \
+                        --use_hessian True \
+                        --load_pretrain True \
+                        --pretrain_path $teacher \
+                        --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
+                        --distill 'rld' \
+                        --teacher_arch 'resnet32_fp' \
+                        --teacher_path $teacher \
+                        --transform $transform \
+                        --cutmix $cutmix \
+                        --seed 20240913 \
+                        --kd_gamma 1.0 \
+                        --kd_alpha 0.0 \
+                        --kd_beta 1.0
 
 # EWGS + NST
 elif [[ $kd_method == "nst" ]] 

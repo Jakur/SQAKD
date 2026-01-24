@@ -20,7 +20,14 @@ seed=$5
 quantization=$6
 kd=$7 # siam 
 
-alpha=2.0
+if [[ $kd == "crd" ]]
+then
+    alpha=0.0
+    beta=0.8
+else
+    alpha=2.0
+    beta=0.0
+fi
 num_epochs=200
 num_transforms=1
 
@@ -66,7 +73,7 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
                     --decay_alpha False \
-                    --kd_beta 0.0 \
+                    --kd_beta $beta \
 
 
 # end timing

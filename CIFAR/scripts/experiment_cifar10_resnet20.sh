@@ -20,7 +20,14 @@ seed=$5
 quantization=$6
 kd=$7
 
-alpha=2.0
+if [[ $kd == "crd" ]]
+then
+    alpha=0.0
+    beta=0.8
+else
+    alpha=2.0
+    beta=0.0
+fi
 num_epochs=400
 num_transforms=1
 
@@ -55,7 +62,7 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --teacher_path $teacher_path \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
-                    --kd_beta 0.0 \
+                    --kd_beta $beta \
                     --seed $seed
 
 
