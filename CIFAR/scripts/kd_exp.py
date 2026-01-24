@@ -36,5 +36,5 @@ for (gpu_idx, (meth, our)) in zip(itertools.cycle(range(num_gpus)), search):
 
 for cmd_list in commands:
     cmd = " ; ".join(cmd_list)
-    print(cmd)
+    print(f"cd /workspace/SQAKD/CIFAR ; {cmd}")
     # print("\n")

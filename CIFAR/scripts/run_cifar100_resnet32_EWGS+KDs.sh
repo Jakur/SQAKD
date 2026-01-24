@@ -27,7 +27,7 @@ ours=$3
 transform="none"
 cutmix=False
 
-if [[ $baseline == "f" ]]
+if [[ $ours == "f" ]]
 then
     transform='none'
 else
