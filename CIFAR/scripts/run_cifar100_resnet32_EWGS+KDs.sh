@@ -37,7 +37,7 @@ fi
 METHOD_TYPE="${kd_method}_${ours}"
 
 epochs=200
-quantize=8
+quantize=16
 num_workers=6
 teacher="/workspace/c100_r32_fp_cutmix.pth"
 echo $METHOD_TYPE

@@ -20,7 +20,7 @@ jobs_per_gpu = 2
 
 method = ["at", "cc", "crd", "nst", "rkd", "sp", "rld", "kd"]
 # method = ["sqakd", "at", "nst", "sp", "rkd", "crd", "fitnet", "cc", "vid", "fsp", "ft", "cktf"]
-ours = ["f"]
+ours = ["f", "t"]
 
 search = sorted(list(itertools.product(method, ours)))
 print(search)
