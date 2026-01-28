@@ -20,10 +20,10 @@ seed=$5
 quantization=$6
 kd=$7
 
-if [[ $kd == "crd" ]]
+if [[ $kd == "none" ]]
 then
     alpha=0.0
-    beta=0.8
+    beta=0.0
 else
     alpha=2.0
     beta=0.0

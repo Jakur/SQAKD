@@ -130,6 +130,7 @@ parser.add_argument('--init_epochs', type=int, default=30, help='init training f
 args = parser.parse_args()
 arg_dict = vars(args)
 if args.distill == "none":
+    args.kd_alpha = 0.0
     args.distill = None
 
 ### make log directory
