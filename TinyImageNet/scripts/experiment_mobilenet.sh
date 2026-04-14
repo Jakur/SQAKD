@@ -15,9 +15,10 @@ echo "STARTING TIMING RUN AT $start_fmt"
 gpu_id=$1
 num_workers=$2
 transform=$3
-eps=$4
+cutmix=$4
+seed=$5
 
-cutmix=False
+eps=100
 
 q_bits=3
 q_method="pact"
@@ -25,7 +26,7 @@ q_method="pact"
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
-METHOD_TYPE="${q_method}_w${q_bits}a${q_bits}_${transform}_${cutmix}"
+METHOD_TYPE="${q_method}_w${q_bits}a${q_bits}_${transform}_${cutmix}_${seed}"
 echo "Method Type: $METHOD_TYPE"
 
 CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
@@ -38,16 +39,18 @@ CUDA_VISIBLE_DEVICES=$gpu_id python main.py \
     --lr 0.004 \
     --weight_decay 1e-4 \
     --backward_method "org" \
-    /home/users/kzhao27/tiny-imagenet-200 \
+    /placeholder/tiny-imagenet-200 \
     --load_pretrain \
-    --pretrain_path "./results/tiny-imagenet_mobilenetV2/mobilenet_v2_fp/checkpoints/checkpoint.pth.tar" \
+    --pretrain_path "/workspace/timg_mv2_fp.tar" \
     --distill True \
     --teacher_arch mobilenet_v2 \
-    --teacher_path "./results/tiny-imagenet_mobilenetV2/mobilenet_v2_fp/checkpoints/checkpoint.pth.tar" \
+    --teacher_path "/workspace/timg_mv2_fp.tar" \
     --gamma 3.0 \
     --alpha 6.0 \
     --quantization $q_method \
     --bits $q_bits \
+    --seed $seed \
+    --cutmix $cutmix \
     --transform $transform \
     --epochs=$eps
 

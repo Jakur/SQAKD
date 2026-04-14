@@ -3,10 +3,17 @@ import os
 import time
 from subprocess import Popen, PIPE
 
-arch = os.environ.get("ARCH", "Resnet")
-num_gpus = int(os.environ.get("GPU_COUNT", 1))
-cutmix_status = os.environ.get("USE_CUTMIX", "False")
-cpus_per_job = int(os.environ.get("USE_CPU", 12))
+# arch = os.environ.get("ARCH", "Resnet")
+# num_gpus = int(os.environ.get("GPU_COUNT", 1))
+# cpus_per_job = int(os.environ.get("USE_CPU", 12))
+# arch = "mobile"
+arch = "resnet"
+jobs_per_gpu = 1
+num_gpus = 4
+num_jobs = num_gpus * jobs_per_gpu
+num_cpus = 26
+cpus_per_job = num_cpus // num_jobs
+seeds = ["20260114"]
 
 if arch.lower().startswith("mo"):
     script = "./scripts/experiment_mobilenet.sh"
@@ -15,29 +22,23 @@ elif arch.lower().startswith("res"):
 else:
     assert(False)
 
-print(f"Number of GPUs: {num_gpus}")
+scripts = [script]
 
-jobs_per_gpu = 1
+commands = [[] for _ in range(num_jobs)]
+command_iter = itertools.cycle(range(len(commands)))
 
-augments = ["auto", "trivial", "augmix", "rand", "erasing", "autoimg", "autosvhn", "none"]
-if cutmix_status.lower().startswith("t"):
-    cutmix = ["True"]
-elif cutmix_status.lower().startswith("f"):
-    cutmix = ["False"]
-else:
-    cutmix = ["True", "False"]
+for seed in seeds:
+    for script in scripts:
+        augments = ["auto", "trivial", "augmix", "rand", "autoimg", "autosvhn", "none", "none"]
+        cutmix = ["False"] * 7 + ["True"]
 
-search = sorted(list(itertools.product(augments, cutmix)))
-print(search)
 
-commands = [[] for _ in range(num_gpus)]
+        for transform, cm, gpu_idx, command_idx in zip(augments, cutmix, itertools.cycle(range(num_gpus)), command_iter):
+            command = [script, str(gpu_idx), str(cpus_per_job), transform, cm, seed]
+            commands[command_idx].append(" ".join(command))
 
-for (gpu_idx, (transform, cm)) in zip(itertools.cycle(range(num_gpus)), search):
-    command = [script, str(gpu_idx), str(cpus_per_job), transform]
-    value = f"{' '.join(command)}"
-    commands[gpu_idx].append(value)
-
-for cmd_list in commands:
-    cmd = " ; ".join(cmd_list)
-    print(cmd)
-    print("\n")
+for command in commands:
+    command = " ; ".join(["cd SQAKD/TinyImageNet/"] + command)
+    print(command)
+    
+print("Done!")

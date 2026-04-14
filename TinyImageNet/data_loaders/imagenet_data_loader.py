@@ -151,6 +151,23 @@ class HFDataset(Dataset):
         img = self.transform(img)
         return img, label
     
+class HFSubset(Dataset):
+    def __init__(self, ds, transform, indices):
+        super().__init__()
+        self.ds = ds
+        self.transform = transform
+        self.indices = indices
+
+    def __len__(self):
+        return len(self.indices)
+    
+    def __getitem__(self, index):
+        index = self.indices[index]
+        img = self.ds[index]["image"]
+        label = self.ds[index]["label"]
+        img = self.transform(img)
+        return img, label
+    
 
 def build_train_transform(name):
     if isinstance(name, str):
@@ -194,14 +211,28 @@ class HFDatasetMulti(Dataset):
         img2 = self.basic_transform(img_raw)
         return img, img2, label
 
-def imagenet_data_loader(args, multi=False):
+def imagenet_data_loader(args, multi=False, inverse_subset=False):
     train_ds = datasets.load_dataset("zh-plus/tiny-imagenet", split="train")
     val_ds = HFDataset(datasets.load_dataset("zh-plus/tiny-imagenet", split="valid"), get_val_transform())
     if multi:
         train_ds = HFDatasetMulti(train_ds, build_train_transform(args.transform))
     else:
-        train_ds = HFDataset(train_ds, build_train_transform(args.transform))
+        if args.subset:
+            gen = torch.Generator(device="cpu").manual_seed(10293232025)
+            subset_size = int(0.9 * len(train_ds))
+            subset_indices = torch.randperm(len(train_ds), generator=gen)[:subset_size].tolist()
+            if inverse_subset:
+                bad = set(subset_indices)
+                subset_indices = []
+                for i in range(len(train_ds)):
+                    if i not in bad:
+                        subset_indices.append(i)
 
+            print(f"Initial Subset Index: {subset_indices[0:5]}")
+            train_ds = HFSubset(train_ds, build_train_transform(args.transform), subset_indices)
+        else:
+            train_ds = HFDataset(train_ds, build_train_transform(args.transform))
+    
     train_loader = DataLoader(train_ds, args.batch_size, shuffle=True, num_workers=args.workers)
     val_loader = DataLoader(val_ds, args.batch_size, shuffle=False, num_workers=args.workers)
     # train_loader =  

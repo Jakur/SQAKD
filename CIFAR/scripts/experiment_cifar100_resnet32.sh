@@ -16,21 +16,29 @@ gpu_id=$1
 num_workers=$2
 transform=$3
 cutmix=$4
+seed=$5
+quantization=$6
+kd=$7 #siam
 
-quantization=16
-alpha=2.0
+if [[ $kd == "crd" ]]
+then
+    alpha=0.0
+    beta=0.8
+else
+    alpha=2.0
+    beta=0.0
+fi
 num_epochs=200
 num_transforms=1
-teacher="fp_cutmix"
-seed=20250215
 
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
-teacher_path="./results/CIFAR100_ResNet32/${teacher}/checkpoint/last_checkpoint.pth"
+teacher_path="/workspace/c100_r32_fp_cutmix.pth"
+# teacher_path="/home/justin/extra_storage/SQAKD_backup_2/results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth"
 echo "Teacher Path: $teacher_path"
 
-METHOD_TYPE="${quantization}_${transform}_${cutmix}_${num_transforms}"
+METHOD_TYPE="${quantization}_${transform}_${cutmix}_${seed}"
 echo "Method Type: $METHOD_TYPE"
 
 # Logic  
@@ -55,7 +63,7 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --load_pretrain True \
                     --pretrain_path $teacher_path \
                     --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE \
-                    --distill 'siam' \
+                    --distill $kd \
                     --teacher_arch 'resnet32_fp' \
                     --teacher_path $teacher_path \
                     --seed $seed \
@@ -65,7 +73,7 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
                     --decay_alpha False \
-                    --kd_beta 0.0 \
+                    --kd_beta $beta \
 
 
 # end timing

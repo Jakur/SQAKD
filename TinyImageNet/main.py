@@ -120,6 +120,7 @@ def parse():
                                                                       help="String value indicating transforms to use")
     parser.add_argument('--seed', type=int, default=None, help='seed for initialization')
     parser.add_argument('--cutmix', type=str2bool, default="f")
+    parser.add_argument('--subset', type=str2bool, default="f")
     # parser.add_argument('--lr_scheduler_type', type=str, default='cosine', choices=('step','cosine'), help='type of the scheduler')
     # parser.add_argument('--lr_decay_schedule', type=str, help='learning rate decaying schedule (for step)')
 
@@ -240,6 +241,7 @@ def main():
     if data_name == "tiny-imagenet-200" or data_name == "imagenet_data":
         train_loader, val_loader = imagenet_data_loader(args)
         train_loader_len = int(math.ceil(len(train_loader.dataset) / args.batch_size))
+        print(f"Train Loader Length: {train_loader_len}")
         # train_loader_len = int(math.ceil(train_loader._size / args.batch_size))
         # val_loader_len = int(val_loader._size / args.batch_size)
         val_loader_len = int(len(val_loader.dataset) / args.batch_size)
@@ -518,6 +520,9 @@ def main():
             # for tensorboard
             tb_logger.add_scalar('val_acc/acc1', prec1, epoch)
             tb_logger.add_scalar('val_acc/acc5', prec5, epoch)
+
+            with open(f"{root_path}/loss.txt", "a") as loss_file:
+                loss_file.write(f"ep={epoch}, test_acc={best_prec1}, test_acc_five={best_prec5}\n")
 
         if data_loader_type == "dali":
             train_loader.reset()

@@ -19,7 +19,7 @@ then
                     --num_workers 8 \
                     --batch_size 100 \
                     --seed 20240913 \
-                    --teacher_path './results/CIFAR10_VGG8/fp_cutmix/checkpoint/last_checkpoint.pth'
+                    --teacher_path './results/CIFAR10_VGG8/fp_cutmix_subset/checkpoint/last_checkpoint.pth'
 
 elif [ $METHOD_TYPE == "augment/" ]
 then
@@ -29,7 +29,7 @@ then
                     --num_workers 8 \
                     --batch_size 100 \
                     --seed 20240913 \
-                    --teacher_path './results/CIFAR100_VGG13/fp_cutmix/checkpoint/last_checkpoint.pth'
+                    --teacher_path './results/CIFAR100_VGG13/fp_subset_cutmix/checkpoint/last_checkpoint.pth'
 
 elif [ $METHOD_TYPE == "augment_resnet10/" ]
 then
@@ -39,7 +39,7 @@ then
                     --num_workers 8 \
                     --batch_size 100 \
                     --seed 20240913 \
-                    --teacher_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth'
+                    --teacher_path './results/CIFAR10_ResNet20/fp_cutmix_subset/checkpoint/last_checkpoint.pth' 
 
 elif [ $METHOD_TYPE == "augment_resnet/" ]
 then
@@ -49,7 +49,7 @@ then
                     --num_workers 8 \
                     --batch_size 100 \
                     --seed 20240913 \
-                    --teacher_path './results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth'
+                    --teacher_path '/media/justin/SSD Ubuntu Stora/SQAKD_backup_2/results/CIFAR100_ResNet32/fp_cutmix/checkpoint/last_checkpoint.pth'
 fi
 
 # end timing

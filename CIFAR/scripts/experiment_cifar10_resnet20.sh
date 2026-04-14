@@ -16,21 +16,29 @@ gpu_id=$1
 num_workers=$2
 transform=$3
 cutmix=$4
+seed=$5
+quantization=$6
+kd=$7
 
-quantization=8
-alpha=2.0
-num_epochs=1200
+if [[ $kd == "none" ]]
+then
+    alpha=0.0
+    beta=0.0
+else
+    alpha=2.0
+    beta=0.0
+fi
+num_epochs=400
 num_transforms=1
-teacher="fp_cutmix"
-seed=20240913
 
 echo "Distill Weight: $alpha"
 echo "Number of Transforms: $num_transforms"
 
-teacher_path="./results/CIFAR10_ResNet20/${teacher}/checkpoint/last_checkpoint.pth"
+teacher_path="/workspace/c10_r20_fp_cutmix.pth"
+# teacher_path="/home/justin/extra_storage/SQAKD_backup_2/results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth"
 echo "Teacher Path: $teacher_path"
 
-METHOD_TYPE="${quantization}_${transform}_${cutmix}_${num_transforms}"
+METHOD_TYPE="${quantization}_${transform}_${cutmix}_${seed}"
 echo "Method Type: $METHOD_TYPE"
 
 # Logic  
@@ -44,17 +52,17 @@ python3 train_quant.py --gpu_id $gpu_id \
                     --baseline False \
                     --use_hessian True \
                     --load_pretrain True \
-                    --pretrain_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --pretrain_path $teacher_path \
                     --log_dir './results/CIFAR10_ResNet20/'$METHOD_TYPE \
-                    --distill 'kd' \
+                    --distill $kd \
                     --num_transforms $num_transforms \
                     --transform $transform \
                     --cutmix $cutmix \
                     --teacher_arch 'resnet20_fp' \
-                    --teacher_path './results/CIFAR10_ResNet20/fp_cutmix/checkpoint/last_checkpoint.pth' \
+                    --teacher_path $teacher_path \
                     --kd_gamma 1.0 \
                     --kd_alpha $alpha \
-                    --kd_beta 0.0 \
+                    --kd_beta $beta \
                     --seed $seed
 
 

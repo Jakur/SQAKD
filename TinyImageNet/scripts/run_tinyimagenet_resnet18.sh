@@ -63,6 +63,31 @@ then
     --cutmix True \
     --epochs=100
 
+elif [ $METHOD_TYPE == "resnet18_fp_subset" ] 
+then
+    CUDA_VISIBLE_DEVICES=0 python main.py \
+    --save_root_path "results/tiny-imagenet/$METHOD_TYPE" \
+    -a resnet18_imagenet \
+    --batch-size 64 \
+    --loss-scale 128.0 \
+    --workers 10 \
+    --optimizer_type 'SGD' \
+    --lr 5e-2 \
+    --weight_decay 5e-4 \
+    --backward_method "org" \
+    /home/users/kzhao27/tiny-imagenet-200 \
+    --not-quant \
+    --subset True \
+    --epochs=100
+
+elif [ $METHOD_TYPE == "augment" ]
+then
+    CUDA_VISIBLE_DEVICES=0 python augment_search.py \
+    -a resnet18_imagenet \
+    --seed 10292025 \
+    --pretrain_path "results/tiny-imagenet/resnet18_fp_subset" \
+    --teacher_path "results/tiny-imagenet/resnet18_fp_subset"
+
 # ===== W8A8, PACT
 elif [ $METHOD_TYPE == "pact_overall/pact_a8w8/resnet18_pact_a8w8_independent_sgd_lr5e-4_wd5e-4_initPretrain" ]
 then

@@ -64,6 +64,23 @@ then
                     --aggressive_transforms False \
                     --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE
 
+elif [ $METHOD_TYPE == "fp_cutmix_subset/" ]
+then 
+    python3 train_fp.py --gpu_id '0' \
+                    --dataset 'cifar100' \
+                    --arch 'resnet32_fp' \
+                    --num_workers 8 \
+                    --batch_size 64 \
+                    --lr_m 0.05 \
+                    --weight_decay 5e-4 \
+                    --lr_scheduler_m 'cosine' \
+                    --epochs 720 \
+                    --seed 20240913 \
+                    --subset 40000 \
+                    --cutmix True \
+                    --aggressive_transforms False \
+                    --log_dir './results/CIFAR100_ResNet32/'$METHOD_TYPE
+
 elif [ $METHOD_TYPE == "siam_t_no/" ]
 then
     python3 train_quant.py --gpu_id '0' \

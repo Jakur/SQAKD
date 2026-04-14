@@ -118,6 +118,40 @@ def _apply_op(
     return img
 
 
+class RBF(nn.Module):
+
+    def __init__(self, n_kernels=5, mul_factor=2.0, bandwidth=None):
+        super().__init__()
+        self.bandwidth_multipliers = mul_factor ** (torch.arange(n_kernels) - n_kernels // 2)
+        self.bandwidth = bandwidth
+
+    def get_bandwidth(self, L2_distances):
+        if self.bandwidth is None:
+            n_samples = L2_distances.shape[0]
+            return L2_distances.data.sum() / (n_samples ** 2 - n_samples)
+
+        return self.bandwidth
+
+    def forward(self, X):
+        L2_distances = torch.cdist(X, X) ** 2
+        return torch.exp(-L2_distances[None, ...] / (self.get_bandwidth(L2_distances) * self.bandwidth_multipliers)[:, None, None]).sum(dim=0)
+
+
+class MMDLoss(nn.Module):
+
+    def __init__(self, kernel=RBF()):
+        super().__init__()
+        self.kernel = kernel
+
+    def forward(self, X, Y):
+        K = self.kernel(torch.vstack([X, Y]))
+
+        X_size = X.shape[0]
+        XX = K[:X_size, :X_size].mean()
+        XY = K[:X_size, X_size:].mean()
+        YY = K[X_size:, X_size:].mean()
+        return XX - 2 * XY + YY
+
 class SingleAugment(torch.nn.Module):
     def __init__(self, transform_name: str, max_bucket: int, num_buckets=31):
         super().__init__()
@@ -364,8 +398,11 @@ def main():
             for param in child.parameters():
                 param.requires_grad = True
 
-    def get_loaders(augmentations, seed_offset=0): 
-        indices = torch.arange(50000)
+    def get_loaders(augmentations, seed_offset=0, subset=False): 
+        if subset:
+            indices = torch.arange(40000, 50000)
+        else:
+            indices = torch.arange(50000)
         _init_fn(seed_offset)
         # train_indices = torch.arange(0, 40000)
         # val_indices = torch.arange(40000, 50000)
@@ -429,6 +466,7 @@ def main():
     
     def check_variance(opt, logit_t):
         # Check teacher's avg probability, Neurips'22
+        # print(logit_t.size())
         p = torch.nn.functional.softmax(logit_t, dim=-1)
         opt.prob += [p] # [batch_size, num_classes]
         opt.entropy += [(-p * torch.log(p)).sum(dim=-1)] # [batch_size]
@@ -440,6 +478,7 @@ def main():
         num = 5
         if len(opt.prob) >= num: 
             prob = torch.cat(opt.prob, dim=0) # [..., num_classes]
+            # print(f"Prob: {prob.size()}")
             entropy = torch.cat(opt.entropy, dim=0)
             avg_prob = prob.mean(dim=0) # [num_classes]
             opt.all_avg_prob += [avg_prob]
@@ -471,9 +510,9 @@ def main():
                         img, labels = cutmix(img, labels)
                         img2, labels2 = cutmix(img2, labels2)
                     pred = model_t(img)
-                    pred2 = model_t(img2)
-                    preds = torch.cat([pred, pred2], dim=0)
-                    res = check_variance(opt, preds)
+                    # pred2 = model_t(img2)
+                    # preds = torch.cat([pred, pred2], dim=0)
+                    res = check_variance(opt, pred)
                     if res is not None:
                         var_str = res
                     opt.total_step += 1
@@ -507,6 +546,7 @@ def main():
 
         train_loader, std_loader = get_loaders(augs) 
         avg_var = compute_variance_loop(train_loader, std_loader, use_cutmix=use_cutmix)
+        # avg_var = 0
         # train_loader2, _ = get_loaders(augs, seed_offset=1)
         avg_train_loss = MeanMetric().to(device)
         avg_min_loss = MeanMetric().to(device)
@@ -521,6 +561,8 @@ def main():
         correct_classified = 0
         cmi = populate_cmi(train_loader, use_cutmix=use_cutmix)
         centroid_div = kl_div(cmi.centroids.log(), torch.eye(args.num_classes, dtype=torch.float32).to(device))
+        t_preds = []
+        v_preds = []
 
         with torch.no_grad():
             for (img, labels) in train_loader:
@@ -530,6 +572,7 @@ def main():
                 if use_cutmix:
                     img, labels = cutmix(img, labels)
                 feat, _, pred = model_t(img, is_feat=True)
+                t_preds.append(pred.cpu())
                 # feat2, _, pred2 = model_t(img2, is_feat=True)
 
                 _, predicted = torch.max(pred.data, 1)
@@ -559,6 +602,48 @@ def main():
                     correct_classified += (predicted == labels).sum().item()
                 total += pred.size(0)
 
+        t_preds = torch.cat(t_preds, dim=0).to(device)
+
+        # dist = torch.distributions.Exponential(torch.tensor([1.0]))
+        dist = torch.distributions.Normal(loc=torch.tensor([0.0]), scale=torch.tensor([1.0]))
+
+        
+
+        with torch.no_grad():
+            for (img, labels) in std_loader:
+                img = img.to(device)
+                # img2 = img2.to(device)
+                labels = labels.to(device)
+                if use_cutmix:
+                    img, labels = cutmix(img, labels)
+                feat, _, pred = model_t(img, is_feat=True)
+                v_preds.append(pred.cpu())
+        # v_preds = dist.sample([10000, 100]).to(device)
+
+        v_preds = torch.cat(v_preds, dim=0).to(device)
+
+        mmd_loss = MMDLoss(kernel=RBF(bandwidth=10).to(device)).to(device)
+        mmd_loss.kernel.bandwidth_multipliers = mmd_loss.kernel.bandwidth_multipliers.to(device)
+        # print(mmd_loss.kernel.bandwidth_multipliers))
+        with torch.no_grad():
+            mmd = MeanMetric()
+            soft = nn.Softmax(dim=1)
+            # Minibatch computation 
+            for (t, p) in zip(t_preds.split(1000, dim=0), v_preds.split(1000, dim=0)):
+                p = p.squeeze()
+                # t = t.sort(dim=1)[0]
+                # p = p.sort(dim=1)[0]
+                # t = t[:, :-1]
+                # p = p[:, :-1]
+                # assert(t.size()[-1] == 99)
+                t = soft(t)
+                p = soft(p)
+                # print(t[0, -10:])
+                # print(p[0, -10:])
+                # assert(False)
+                m = mmd_loss(t, p)
+                mmd.update(m.cpu())
+
         acc = correct_classified / total
         loss_score = -1.0 * avg_train_loss.compute().item()
         min_loss_score = -1.0 * avg_min_loss.compute().item()
@@ -584,7 +669,7 @@ def main():
                     "acc": acc, "masked_cmi": masked_cmi_score, "min_loss": min_loss_score, 
                     "logit_sim": avg_logit_sim.compute().item(), "vector_sim": avg_vec_sim.compute().item(), 
                     "entropy": avg_entropy.compute().item(), "centroid_div": centroid_div.item(),
-                    "centroids": cmi.centroids.tolist(), "var": avg_var})
+                    "centroids": cmi.centroids.tolist(), "var": avg_var, "mmd": mmd.compute().item()})
         return out
 
     scores = []
@@ -642,7 +727,7 @@ def main():
     # temp4 = do_iteration(3, -10000, use_augs=[TAW()], do_print=True, use_cutmix=False)
     # scores = [temp, temp2, temp3, temp4]
     arch = args.teacher_arch.split("_")[0]
-    with open(f"known_{arch}_{args.num_classes}.json", "w") as f:
+    with open(f"2026/final_{arch}_{args.num_classes}.json", "w") as f:
         # Dump the data into the file
         json.dump(scores, f)
 
